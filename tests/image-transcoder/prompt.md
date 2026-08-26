@@ -5,8 +5,14 @@ Build a modern web application that can transcode images and apply image manipul
 ## Requirements
 
 1. **C++ Image Processing Engine (`transcoder.cpp` or `main.cpp`)**:
-   - Implement C++ functionality to process image pixel data (e.g., converting between raw RGBA buffers, applying grayscale/sepia/edge-detection/kernel convolutions, or handling bitmap formats like BMP/PPM/raw pixels).
-   - Expose clean C++ functions or classes capable of taking image dimensions, format types, and byte arrays/buffers, performing the manipulation, and returning the transformed byte buffer.
+   - Implement C++ functionality to process image pixel data (e.g., converting
+     between raw RGBA buffers, applying grayscale/sepia/edge-detection/kernel
+     convolutions, or handling bitmap formats like BMP/PPM/raw pixels).
+   - Compile in whatever open source image libraries are needed to do actual work
+     transforming and/or processing image files.
+   - Expose clean C++ functions or classes capable of taking image dimensions,
+     format types, and byte arrays/buffers, performing the manipulation, and
+     returning the transformed byte buffer.
 
 2. **Build Script (`Makefile`)**:
    - Provide a `Makefile` that compiles the C++ code to WebAssembly and outputs a JavaScript module (`module.mjs`).
