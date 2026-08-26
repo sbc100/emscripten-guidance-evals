@@ -1,6 +1,8 @@
 # Test Prompt: Image Transcoder & Processing Web Application
 
-Build a modern web application that can transcode images and apply image manipulation filters in the browser using a C++ component compiled to WebAssembly via Emscripten.
+Build a modern web application that can transcode images and apply image
+manipulation filters in the browser using a C++ component compiled to
+WebAssembly via Emscripten.
 
 ## Requirements
 
@@ -20,7 +22,11 @@ Build a modern web application that can transcode images and apply image manipul
 
 3. **Frontend Web Application (`index.html`)**:
    - Create a clean, responsive HTML/JS web application that loads the generated WebAssembly module.
-   - Allow users to upload or select an image file (`.png`, `.jpg`, `.bmp`, etc.) and render it on an HTML5 `<canvas>`.
-   - Provide UI controls (buttons, dropdowns, or sliders) to select a transcoding format or image processing filter.
-   - Render the before and after preview side-by-side or in real-time on the canvas, and display the C++ processing time in milliseconds.
+   - Allow users to upload or select an image file (`.png`, `.jpg`, `.bmp`,
+     etc.) and render it on an HTML5 `<canvas>`.
+   - Provide UI controls (buttons, dropdowns, or sliders) to select a
+     transcoding format or image processing filter.
+   - Render the before and after preview side-by-side or in real-time on the
+     canvas, and display the C++ processing time in milliseconds.
    - Allow downloading the processed image.
+   - Please verify that the images render correctly on the page.

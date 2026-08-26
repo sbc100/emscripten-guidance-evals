@@ -7,8 +7,12 @@ verifies build outcomes, and evaluates the generated solutions.
 """
 
 import argparse
+import json
+import os
+import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -42,6 +46,8 @@ def setup_tests(tests: list[str]) -> None:
 
         for mode in ["unguided", "guided"]:
             workspace = RESULTS_DIR / test / mode
+            if workspace.exists():
+                shutil.rmtree(workspace)
             workspace.mkdir(parents=True, exist_ok=True)
 
             # Initialize a fresh git repository in the workspace
@@ -89,7 +95,101 @@ def setup_tests(tests: list[str]) -> None:
             print(f"Set up workspace: {workspace}")
 
 
-def run_agent(tests: list[str], runner: str) -> None:
+def wait_for_agentapi_conversation(
+    conversation_id: str,
+    timeout_seconds: int = 600,
+    poll_interval: float = 2.0,
+) -> bool:
+    """Poll the agent transcript log until completion or timeout."""
+    transcript_path = (
+        Path.home()
+        / ".gemini"
+        / "jetski"
+        / "brain"
+        / conversation_id
+        / ".system_generated"
+        / "logs"
+        / "transcript.jsonl"
+    )
+
+    print(f"Waiting for agent conversation {conversation_id} to finish...")
+    start_time = time.time()
+    last_reported_step = -1
+
+    while True:
+        elapsed = time.time() - start_time
+        if elapsed > timeout_seconds:
+            print(
+                f"\nTimed out waiting for conversation {conversation_id} "
+                f"after {elapsed:.0f}s."
+            )
+            return False
+
+        if transcript_path.exists():
+            try:
+                raw = transcript_path.read_text(encoding="utf-8").strip()
+                if raw:
+                    lines = [
+                        json.loads(line)
+                        for line in raw.splitlines()
+                        if line.strip()
+                    ]
+                    if lines:
+                        last_step = lines[-1]
+                        step_idx = last_step.get("step_index", len(lines) - 1)
+                        step_type = last_step.get("type", "")
+                        source = last_step.get("source", "")
+                        status = last_step.get("status", "")
+                        tool_calls = last_step.get("tool_calls", [])
+                        content = last_step.get("content", "")
+
+                        # Check if any recent background task is still running
+                        has_running = any(
+                            s.get("status") == "RUNNING" for s in lines[-10:]
+                        )
+
+                        # Check if model finished its response
+                        if (
+                            source == "MODEL"
+                            and step_type == "PLANNER_RESPONSE"
+                            and status == "DONE"
+                            and not tool_calls
+                            and content
+                            and not has_running
+                        ):
+                            print(
+                                f"\n  Completed conversation {conversation_id} "
+                                f"in {elapsed:.1f}s ({len(lines)} steps)."
+                            )
+                            return True
+
+                        if step_idx != last_reported_step:
+                            last_reported_step = step_idx
+                            tool_desc = ""
+                            if tool_calls:
+                                tool_desc = (
+                                    f": {tool_calls[0].get('name', 'tool')}"
+                                )
+                            elif content:
+                                tool_desc = ": generating final response"
+                            print(
+                                f"\r  [{elapsed:4.0f}s] Step {step_idx:3d}"
+                                f"{tool_desc:<30}",
+                                end="",
+                                flush=True,
+                            )
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+                pass
+
+        time.sleep(poll_interval)
+
+
+def run_agent(
+    tests: list[str],
+    runner: str,
+    async_mode: bool = False,
+    timeout: int = 600,
+) -> None:
     """Run the specified agent runner across the test workspaces."""
     for test in tests:
         for mode in ["unguided", "guided"]:
@@ -109,13 +209,112 @@ def run_agent(tests: list[str], runner: str) -> None:
                 print(f"Directory: {workspace}")
                 print(f"Prompt:\n{prompt_content[:300]}...\n")
             elif runner == "agentapi":
+                agentapi_bin = shutil.which("agentapi")
+                if not agentapi_bin:
+                    default_path = (
+                        Path.home() / ".gemini" / "jetski" / "bin" / "agentapi"
+                    )
+                    if default_path.exists():
+                        agentapi_bin = str(default_path)
+                if not agentapi_bin:
+                    print(
+                        "Error: 'agentapi' CLI not found in PATH or "
+                        "~/.gemini/jetski/bin/agentapi.\n"
+                        "Please ensure Jetski is installed or add "
+                        "~/.gemini/jetski/bin to PATH."
+                    )
+                    continue
+
+                env = os.environ.copy()
+                if "ANTIGRAVITY_PROJECT_ID" not in env:
+                    env["ANTIGRAVITY_PROJECT_ID"] = "default-cli-project"
+
                 cmd = [
-                    "agentapi",
+                    agentapi_bin,
                     "new-conversation",
                     f"--title={test} ({mode})",
                     prompt_content,
                 ]
-                print(f"Executing: {' '.join(cmd[:3])} '<prompt>' in {workspace}")
+                print(
+                    f"Executing: {' '.join(cmd[:3])} '<prompt>' in {workspace}"
+                )
+                res = subprocess.run(
+                    cmd,
+                    cwd=workspace,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+                if res.returncode != 0:
+                    print(f"Error starting conversation: {res.stderr}")
+                    continue
+
+                conversation_id = None
+                try:
+                    data = json.loads(res.stdout)
+                    conversation_id = (
+                        data.get("response", {})
+                        .get("newConversation", {})
+                        .get("conversationId")
+                    )
+                except (json.JSONDecodeError, AttributeError):
+                    match = re.search(
+                        r'"conversationId":\s*"([^"]+)"', res.stdout
+                    )
+                    if match:
+                        conversation_id = match.group(1)
+
+                if not conversation_id:
+                    print(
+                        f"Failed to extract conversationId from output:\n"
+                        f"{res.stdout}"
+                    )
+                    continue
+
+                print(f"Started conversation: {conversation_id}")
+                if not async_mode:
+                    wait_for_agentapi_conversation(
+                        conversation_id, timeout_seconds=timeout
+                    )
+            elif runner in ("jetski-cli", "jetski"):
+                jetski_bin = shutil.which("jetski-cli") or shutil.which(
+                    "jetski"
+                )
+                if not jetski_bin:
+                    release_path = Path(
+                        "/google/bin/releases/jetski-devs/tools/cli"
+                    )
+                    if release_path.exists():
+                        jetski_bin = str(release_path)
+                    else:
+                        default_path = (
+                            Path.home()
+                            / ".gemini"
+                            / "jetski"
+                            / "bin"
+                            / "jetski"
+                        )
+                        if default_path.exists():
+                            jetski_bin = str(default_path)
+                if not jetski_bin:
+                    print(
+                        "Error: Jetski CLI not found in PATH or "
+                        "/google/bin/releases/jetski-devs/tools/cli.\n"
+                        "Please ensure Jetski CLI is installed."
+                    )
+                    continue
+
+                timeout_str = f"{timeout}s"
+                cmd = [
+                    jetski_bin,
+                    "--dangerously-skip-permissions",
+                    f"--print-timeout={timeout_str}",
+                    "-p",
+                    prompt_content,
+                ]
+                print(f"Executing Jetski CLI in {workspace}...")
                 subprocess.run(cmd, cwd=workspace, check=False)
             elif runner == "gemini":
                 cmd = ["gemini", "-p", prompt_content]
@@ -437,11 +636,31 @@ def main() -> None:
     run_p = subparsers.add_parser("run", help="Run agent on workspaces")
     run_p.add_argument(
         "--runner",
-        choices=["print", "agentapi", "gemini", "claude", "mock"],
+        choices=[
+            "print",
+            "agentapi",
+            "jetski-cli",
+            "jetski",
+            "gemini",
+            "claude",
+            "mock",
+        ],
         default="print",
         help="Runner engine to execute",
     )
     run_p.add_argument("--test", help="Specific test name")
+    run_p.add_argument(
+        "--async",
+        dest="async_mode",
+        action="store_true",
+        help="Launch agent without waiting for completion",
+    )
+    run_p.add_argument(
+        "--timeout",
+        type=int,
+        default=600,
+        help="Maximum seconds to wait for agent completion (default: 600)",
+    )
 
     # build
     build_p = subparsers.add_parser(
@@ -463,7 +682,12 @@ def main() -> None:
     if args.command == "setup":
         setup_tests(tests)
     elif args.command == "run":
-        run_agent(tests, args.runner)
+        run_agent(
+            tests,
+            args.runner,
+            async_mode=args.async_mode,
+            timeout=args.timeout,
+        )
     elif args.command == "build":
         build_workspaces(tests)
     elif args.command == "evaluate":

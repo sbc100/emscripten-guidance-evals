@@ -37,11 +37,15 @@ To initialize clean git repositories (`unguided` and `guided`) for all test case
 
 ### 2. Run AI Coding Agents
 
-You can run an agent across the setup workspaces using different runner engines (`agentapi`, `gemini`, `claude`, `mock`, or `print`):
+You can run an agent across the setup workspaces using different runner engines
+(`jetski-cli`, `agentapi`, `gemini`, `claude`, `mock`, or `print`):
 
 ```bash
 # Print prompts and directory paths to run manually or via subagents:
 ./run_evals.py run --runner print
+
+# Run via Jetski CLI (interactive / non-interactive print mode):
+./run_evals.py run --runner jetski-cli
 
 # Run via Agent API:
 ./run_evals.py run --runner agentapi
