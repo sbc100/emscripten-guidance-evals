@@ -567,15 +567,29 @@ def evaluate_tests(tests: list[str]) -> None:
         report_path.write_text(report_content, encoding="utf-8")
         print(f"Wrote evaluation report: {report_path}")
 
-        summary_rows.append(f"| {test} | {unguided_score} | {guided_score} | +{uplift} |")
+        summary_rows.append((test, unguided_score, guided_score, uplift))
 
     if summary_rows:
+        name_w = max(16, *(len(r[0]) for r in summary_rows))
+        header = (
+            f"| {'Test Case':<{name_w}} | {'Unguided Score':<14} | "
+            f"{'Guided Score':<12} | {'Uplift (+pp)':<12} |"
+        )
+        divider = (
+            f"| :{(name_w - 1)*'-'} | :{12*'-'}: | :{10*'-'}: | :{10*'-'}: |"
+        )
+        formatted_rows = [
+            f"| {t:<{name_w}} | {u!s:^14} | {g!s:^12} | {f'+{up}':^12} |"
+            for t, u, g, up in summary_rows
+        ]
         summary_file = RESULTS_DIR / "summary_metrics.md"
         summary_md = (
             "# Emscripten Guidance AI Agent Evaluation Metrics\n\n"
-            "| Test Case | Unguided Score | Guided Score | Uplift (+pp) |\n"
-            "| :--- | :---: | :---: | :---: |\n"
-            + "\n".join(summary_rows)
+            + header
+            + "\n"
+            + divider
+            + "\n"
+            + "\n".join(formatted_rows)
             + "\n"
         )
         summary_file.write_text(summary_md, encoding="utf-8")
