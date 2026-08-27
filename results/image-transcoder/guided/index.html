@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wasm Image Transcoder & Processing Studio</title>
+  <style>
+    :root {
+      --bg-primary: #0f172a;
+      --bg-secondary: #1e293b;
+      --bg-card: #1e293b88;
+      --bg-input: #334155;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --accent-active: #4338ca;
+      --accent-light: #818cf8;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border: #334155;
+      --border-focus: #6366f1;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.5;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #6366f1, #a855f7);
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: bold;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .subtitle {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .status-badge.loading {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--warning);
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+
+    .status-badge.error {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--danger);
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: currentColor;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 1024px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Sidebar controls */
+    .controls-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .card-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--accent-light);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .control-group {
+      margin-bottom: 14px;
+    }
+
+    .control-group:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .val-badge {
+      color: var(--accent-light);
+      font-family: monospace;
+    }
+
+    select, input[type="text"], input[type="number"] {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 0.88rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    select:focus, input[type="text"]:focus, input[type="number"]:focus {
+      border-color: var(--border-focus);
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .btn-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    button {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 0.82rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    button:hover {
+      background: #475569;
+      border-color: #64748b;
+    }
+
+    button:active {
+      transform: scale(0.98);
+    }
+
+    button.btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    button.btn-primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+
+    button.btn-success {
+      background: var(--success);
+      border-color: var(--success);
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    button.btn-success:hover {
+      background: #059669;
+      border-color: #059669;
+    }
+
+    button.btn-outline {
+      background: transparent;
+      border-color: var(--border);
+    }
+
+    button.btn-outline.active {
+      background: rgba(99, 102, 241, 0.2);
+      border-color: var(--accent);
+      color: var(--accent-light);
+    }
+
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: rgba(30, 41, 59, 0.5);
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--accent);
+      background: rgba(99, 102, 241, 0.05);
+    }
+
+    .dropzone-icon {
+      font-size: 28px;
+      margin-bottom: 6px;
+    }
+
+    .dropzone-text {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .dropzone-subtext {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* Preview area */
+    .preview-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 12px;
+    }
+
+    .stat-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .stat-value {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      font-family: monospace;
+    }
+
+    .stat-value.highlight {
+      color: var(--accent-light);
+    }
+
+    .stat-sub {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 768px) {
+      .preview-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .preview-box {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      min-height: 400px;
+    }
+
+    .preview-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .preview-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .preview-info {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      font-family: monospace;
+    }
+
+    .canvas-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: auto;
+      background: repeating-conic-gradient(#1e293b 0% 25%, #0f172a 0% 50%) 50% / 16px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      position: relative;
+      min-height: 280px;
+    }
+
+    canvas {
+      max-width: 100%;
+      max-height: 500px;
+      object-fit: contain;
+      image-rendering: auto;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+
+    .canvas-pixelated {
+      image-rendering: pixelated;
+    }
+
+    .preview-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 10px;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+    }
+
+    .two-col-inputs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+    }
+
+    .checkbox-label input {
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo-group">
+        <div class="logo-icon">⚡</div>
+        <div>
+          <h1>Wasm Image Transcoder</h1>
+          <div class="subtitle">High-performance C++ Image Codecs & Filters compiled with Emscripten</div>
+        </div>
+      </div>
+      <div id="wasmStatus" class="status-badge loading">
+        <span class="status-dot"></span>
+        <span id="wasmStatusText">Loading WebAssembly Module...</span>
+      </div>
+    </header>
+
+    <div class="main-grid">
+      <!-- Left sidebar: Controls -->
+      <div class="controls-panel">
+        <!-- Input & Samples -->
+        <div class="card">
+          <div class="card-title">
+            <span>📁 Source Image</span>
+          </div>
+          <div id="dropzone" class="dropzone">
+            <div class="dropzone-icon">📥</div>
+            <div class="dropzone-text">Click or drag image here</div>
+            <div class="dropzone-subtext">Supports PNG, JPEG, BMP, TGA, QOI, GIF, PNM</div>
+            <input type="file" id="fileInput" accept="image/*,.qoi,.tga,.bmp,.pnm" class="hidden">
+          </div>
+          <div class="control-group" style="margin-top: 10px;">
+            <label>Load Sample Pattern</label>
+            <div class="btn-row">
+              <button id="btnSampleColor" class="btn-outline">🌈 Colors</button>
+              <button id="btnSampleGrid" class="btn-outline">📐 Grid</button>
+              <button id="btnSampleGradient" class="btn-outline">✨ Gradient</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Format & Compression -->
+        <div class="card">
+          <div class="card-title">
+            <span>🔄 Transcode Target</span>
+          </div>
+          <div class="control-group">
+            <label for="formatSelect">Output Format</label>
+            <select id="formatSelect">
+              <option value="png" selected>PNG (Lossless)</option>
+              <option value="jpeg">JPEG (Lossy)</option>
+              <option value="bmp">BMP (Bitmap)</option>
+              <option value="tga">TGA (Targa)</option>
+              <option value="qoi">QOI (Quite OK Image)</option>
+              <option value="rgba">Raw RGBA Buffer</option>
+            </select>
+          </div>
+          <div id="jpegQualityGroup" class="control-group hidden">
+            <label for="jpegQuality">
+              <span>JPEG Quality</span>
+              <span id="jpegQualityVal" class="val-badge">85%</span>
+            </label>
+            <input type="range" id="jpegQuality" min="1" max="100" value="85">
+          </div>
+        </div>
+
+        <!-- Dimensions & Resizing -->
+        <div class="card">
+          <div class="card-title">
+            <span>📐 Resizing & Geometry</span>
+          </div>
+          <div class="control-group">
+            <div class="two-col-inputs">
+              <div>
+                <label for="targetWidth">Width (px)</label>
+                <input type="number" id="targetWidth" min="1" placeholder="Auto / Orig">
+              </div>
+              <div>
+                <label for="targetHeight">Height (px)</label>
+                <input type="number" id="targetHeight" min="1" placeholder="Auto / Orig">
+              </div>
+            </div>
+          </div>
+          <div class="control-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="aspectRatioCheck" checked>
+              <span>Maintain Aspect Ratio</span>
+            </label>
+          </div>
+          <div class="control-group">
+            <label for="resizerSelect">Resampling Algorithm</label>
+            <select id="resizerSelect">
+              <option value="mitchell" selected>Mitchell-Netravali (Bicubic)</option>
+              <option value="catmullrom">Catmull-Rom (Sharp)</option>
+              <option value="bilinear">Bilinear (Triangle)</option>
+              <option value="box">Box (Fast)</option>
+              <option value="nearest">Nearest Neighbor (Pixel Art)</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label>Presets & Rotation</label>
+            <div class="btn-row">
+              <button id="btnScale100" class="btn-outline">100%</button>
+              <button id="btnScale50" class="btn-outline">50%</button>
+              <button id="btnScale25" class="btn-outline">25%</button>
+              <button id="btnScale200" class="btn-outline">200%</button>
+            </div>
+            <div class="btn-row" style="margin-top: 6px;">
+              <button id="btnRotCCW" class="btn-outline" title="Rotate 90 CCW">↺ 90°</button>
+              <button id="btnRotCW" class="btn-outline" title="Rotate 90 CW">↻ 90°</button>
+              <button id="btnFlipH" class="btn-outline" title="Flip Horizontal">⇄ Flip H</button>
+              <button id="btnFlipV" class="btn-outline" title="Flip Vertical">⇅ Flip V</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Color Adjustments -->
+        <div class="card">
+          <div class="card-title">
+            <span>🎨 Color & Tone</span>
+            <button id="btnResetColors" class="btn-outline" style="padding: 2px 8px; font-size: 0.75rem;">Reset</button>
+          </div>
+          <div class="control-group">
+            <label for="brightness">
+              <span>Brightness</span>
+              <span id="brightnessVal" class="val-badge">0</span>
+            </label>
+            <input type="range" id="brightness" min="-100" max="100" value="0">
+          </div>
+          <div class="control-group">
+            <label for="contrast">
+              <span>Contrast</span>
+              <span id="contrastVal" class="val-badge">0</span>
+            </label>
+            <input type="range" id="contrast" min="-100" max="100" value="0">
+          </div>
+          <div class="control-group">
+            <label for="saturation">
+              <span>Saturation</span>
+              <span id="saturationVal" class="val-badge">1.0</span>
+            </label>
+            <input type="range" id="saturation" min="0" max="3" step="0.05" value="1.0">
+          </div>
+          <div class="control-group">
+            <label for="gamma">
+              <span>Gamma</span>
+              <span id="gammaVal" class="val-badge">1.0</span>
+            </label>
+            <input type="range" id="gamma" min="0.2" max="2.5" step="0.05" value="1.0">
+          </div>
+          <div class="control-group">
+            <label for="hueShift">
+              <span>Hue Shift</span>
+              <span id="hueShiftVal" class="val-badge">0°</span>
+            </label>
+            <input type="range" id="hueShift" min="0" max="360" value="0">
+          </div>
+          <div class="control-group">
+            <div class="btn-row">
+              <button id="btnGrayscale" class="btn-outline">Grayscale</button>
+              <button id="btnInvert" class="btn-outline">Invert</button>
+              <button id="btnSepia" class="btn-outline">Sepia</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Effects & Convolutions -->
+        <div class="card">
+          <div class="card-title">
+            <span>✨ Effects & Convolutions</span>
+          </div>
+          <div class="control-group">
+            <label for="effectSelect">Filter Effect</label>
+            <select id="effectSelect">
+              <option value="none" selected>None</option>
+              <option value="gaussian_blur">Gaussian Blur</option>
+              <option value="box_blur">Box Blur</option>
+              <option value="sharpen">Sharpen</option>
+              <option value="unsharp_mask">Unsharp Mask</option>
+              <option value="sobel_edges">Sobel Edge Detection</option>
+              <option value="emboss">3D Emboss</option>
+              <option value="pixelate">Pixelate / Mosaic</option>
+              <option value="dither">Floyd-Steinberg Dithering</option>
+            </select>
+          </div>
+          <div id="effectParamGroup" class="control-group hidden">
+            <label for="effectParam">
+              <span id="effectParamLabel">Intensity</span>
+              <span id="effectParamVal" class="val-badge">1.0</span>
+            </label>
+            <input type="range" id="effectParam" min="0.5" max="15" step="0.5" value="2">
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="card">
+          <button id="btnTranscode" class="btn-primary" style="width: 100%; padding: 12px; font-size: 0.95rem; margin-bottom: 8px;">
+            ⚡ Process & Transcode
+          </button>
+          <button id="btnDownload" class="btn-success" style="width: 100%; padding: 10px;" disabled>
+            💾 Download Transcoded Image
+          </button>
+        </div>
+      </div>
+
+      <!-- Right main area: Stats and Canvas previews -->
+      <div class="preview-panel">
+        <!-- Performance stats banner -->
+        <div class="stats-bar">
+          <div class="stat-card">
+            <div class="stat-label">C++ Total Time</div>
+            <div id="statTotalTime" class="stat-value highlight">-- ms</div>
+            <div id="statThroughput" class="stat-sub">-- MP/s</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Decode Time</div>
+            <div id="statDecodeTime" class="stat-value">-- ms</div>
+            <div id="statInputFmt" class="stat-sub">--</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Filter & Process</div>
+            <div id="statProcessTime" class="stat-value">-- ms</div>
+            <div class="stat-sub">C++ Engine</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Encode Time</div>
+            <div id="statEncodeTime" class="stat-value">-- ms</div>
+            <div id="statOutputFmt" class="stat-sub">--</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Size Change</div>
+            <div id="statSizeChange" class="stat-value">--</div>
+            <div id="statSavings" class="stat-sub">--</div>
+          </div>
+        </div>
+
+        <!-- Side-by-side Canvases -->
+        <div class="preview-grid">
+          <!-- Input Preview -->
+          <div class="preview-box">
+            <div class="preview-header">
+              <div class="preview-title">
+                <span>Original Image</span>
+              </div>
+              <div id="inputDimensions" class="preview-info">0 × 0</div>
+            </div>
+            <div class="canvas-container">
+              <canvas id="inputCanvas" width="400" height="300"></canvas>
+            </div>
+            <div class="preview-footer">
+              <span id="inputFileSize">Size: 0 KB</span>
+              <span id="inputFormatBadge">Format: --</span>
+            </div>
+          </div>
+
+          <!-- Output Preview -->
+          <div class="preview-box">
+            <div class="preview-header">
+              <div class="preview-title">
+                <span>Transcoded / Filtered</span>
+              </div>
+              <div id="outputDimensions" class="preview-info">0 × 0</div>
+            </div>
+            <div class="canvas-container">
+              <canvas id="outputCanvas" width="400" height="300"></canvas>
+            </div>
+            <div class="preview-footer">
+              <span id="outputFileSize">Size: 0 KB</span>
+              <span id="outputFormatBadge">Target: PNG</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import createModule from './module.mjs';
+
+    // State
+    let wasmModule = null;
+    let rawInputBytes = null;
+    let inputWidth = 0;
+    let inputHeight = 0;
+    let inputFormat = '';
+    let currentProcessedBytes = null;
+    let currentProcessedFormat = 'png';
+    let rotationAngle = 0;
+    let flipHState = false;
+    let flipVState = false;
+    let grayscaleState = false;
+    let invertState = false;
+    let sepiaState = false;
+    let debounceTimer = null;
+
+    // DOM Elements
+    const wasmStatus = document.getElementById('wasmStatus');
+    const wasmStatusText = document.getElementById('wasmStatusText');
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const formatSelect = document.getElementById('formatSelect');
+    const jpegQualityGroup = document.getElementById('jpegQualityGroup');
+    const jpegQuality = document.getElementById('jpegQuality');
+    const jpegQualityVal = document.getElementById('jpegQualityVal');
+    const targetWidth = document.getElementById('targetWidth');
+    const targetHeight = document.getElementById('targetHeight');
+    const aspectRatioCheck = document.getElementById('aspectRatioCheck');
+    const resizerSelect = document.getElementById('resizerSelect');
+    const brightness = document.getElementById('brightness');
+    const brightnessVal = document.getElementById('brightnessVal');
+    const contrast = document.getElementById('contrast');
+    const contrastVal = document.getElementById('contrastVal');
+    const saturation = document.getElementById('saturation');
+    const saturationVal = document.getElementById('saturationVal');
+    const gamma = document.getElementById('gamma');
+    const gammaVal = document.getElementById('gammaVal');
+    const hueShift = document.getElementById('hueShift');
+    const hueShiftVal = document.getElementById('hueShiftVal');
+    const btnGrayscale = document.getElementById('btnGrayscale');
+    const btnInvert = document.getElementById('btnInvert');
+    const btnSepia = document.getElementById('btnSepia');
+    const btnResetColors = document.getElementById('btnResetColors');
+    const effectSelect = document.getElementById('effectSelect');
+    const effectParamGroup = document.getElementById('effectParamGroup');
+    const effectParam = document.getElementById('effectParam');
+    const effectParamLabel = document.getElementById('effectParamLabel');
+    const effectParamVal = document.getElementById('effectParamVal');
+    const btnTranscode = document.getElementById('btnTranscode');
+    const btnDownload = document.getElementById('btnDownload');
+    const inputCanvas = document.getElementById('inputCanvas');
+    const outputCanvas = document.getElementById('outputCanvas');
+    const inputCtx = inputCanvas.getContext('2d');
+    const outputCtx = outputCanvas.getContext('2d');
+
+    // Stats Elements
+    const statTotalTime = document.getElementById('statTotalTime');
+    const statThroughput = document.getElementById('statThroughput');
+    const statDecodeTime = document.getElementById('statDecodeTime');
+    const statInputFmt = document.getElementById('statInputFmt');
+    const statProcessTime = document.getElementById('statProcessTime');
+    const statEncodeTime = document.getElementById('statEncodeTime');
+    const statOutputFmt = document.getElementById('statOutputFmt');
+    const statSizeChange = document.getElementById('statSizeChange');
+    const statSavings = document.getElementById('statSavings');
+    const inputDimensions = document.getElementById('inputDimensions');
+    const inputFileSize = document.getElementById('inputFileSize');
+    const inputFormatBadge = document.getElementById('inputFormatBadge');
+    const outputDimensions = document.getElementById('outputDimensions');
+    const outputFileSize = document.getElementById('outputFileSize');
+    const outputFormatBadge = document.getElementById('outputFormatBadge');
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return (bytes / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
+    }
+
+    // Initialize Wasm
+    async function initWasm() {
+      try {
+        wasmStatusText.textContent = 'Initializing Wasm Module...';
+        wasmModule = await createModule();
+        wasmStatus.className = 'status-badge';
+        wasmStatusText.textContent = '⚡ Wasm Engine Ready';
+        console.log('WebAssembly Image Transcoder initialized successfully');
+
+        // Create initial default sample image
+        generateSamplePattern('color');
+      } catch (err) {
+        console.error('Failed to initialize Wasm module:', err);
+        wasmStatus.className = 'status-badge error';
+        wasmStatusText.textContent = '❌ Wasm Failed: ' + err.message;
+      }
+    }
+
+    // Generate sample procedural image
+    function generateSamplePattern(type) {
+      const w = 512;
+      const h = 512;
+      const offscreen = document.createElement('canvas');
+      offscreen.width = w;
+      offscreen.height = h;
+      const ctx = offscreen.getContext('2d');
+
+      if (type === 'color') {
+        const grad = ctx.createLinearGradient(0, 0, w, h);
+        grad.addColorStop(0, '#f43f5e');
+        grad.addColorStop(0.25, '#ec4899');
+        grad.addColorStop(0.5, '#8b5cf6');
+        grad.addColorStop(0.75, '#3b82f6');
+        grad.addColorStop(1, '#10b981');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Add geometric elements
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        for (let i = 0; i < 6; i++) {
+          ctx.beginPath();
+          ctx.arc(w / 2, h / 2, 40 + i * 35, 0, Math.PI * 2);
+          ctx.lineWidth = 10;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+          ctx.stroke();
+        }
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 36px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('WASM TRANSCODER', w / 2, h / 2 - 10);
+        ctx.font = '20px sans-serif';
+        ctx.fillText('512 × 512 RGBA', w / 2, h / 2 + 30);
+      } else if (type === 'grid') {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, w, h);
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2;
+        const step = 32;
+        for (let x = 0; x <= w; x += step) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, h);
+          ctx.stroke();
+        }
+        for (let y = 0; y <= h; y += step) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(w, y);
+          ctx.stroke();
+        }
+        ctx.fillStyle = '#f59e0b';
+        ctx.beginPath();
+        ctx.arc(w / 2, h / 2, 80, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (type === 'gradient') {
+        const rad = ctx.createRadialGradient(w / 2, h / 2, 20, w / 2, h / 2, w / 2);
+        rad.addColorStop(0, '#facc15');
+        rad.addColorStop(0.5, '#ea580c');
+        rad.addColorStop(1, '#431407');
+        ctx.fillStyle = rad;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      offscreen.toBlob(async (blob) => {
+        const buffer = await blob.arrayBuffer();
+        loadInputBuffer(new Uint8Array(buffer), 'PNG Sample', 'png');
+      }, 'image/png');
+    }
+
+    // Load input image buffer
+    function loadInputBuffer(uint8Array, name, formatHint) {
+      rawInputBytes = uint8Array;
+      if (!wasmModule) return;
+
+      const decodeRes = wasmModule.decodeImage(rawInputBytes);
+      if (!decodeRes.success) {
+        alert('Failed to decode image: ' + decodeRes.error);
+        return;
+      }
+
+      inputWidth = decodeRes.width;
+      inputHeight = decodeRes.height;
+      inputFormat = decodeRes.format || formatHint || 'raw';
+
+      // Render to input canvas
+      inputCanvas.width = inputWidth;
+      inputCanvas.height = inputHeight;
+      const imgData = new ImageData(
+        new Uint8ClampedArray(decodeRes.data.buffer, decodeRes.data.byteOffset, decodeRes.data.byteLength),
+        inputWidth,
+        inputHeight
+      );
+      inputCtx.putImageData(imgData, 0, 0);
+
+      // Update input info
+      inputDimensions.textContent = `${inputWidth} × ${inputHeight}`;
+      inputFileSize.textContent = `Size: ${formatBytes(rawInputBytes.byteLength)}`;
+      inputFormatBadge.textContent = `Format: ${inputFormat.toUpperCase()}`;
+
+      // Reset target dimensions placeholder
+      targetWidth.value = '';
+      targetHeight.value = '';
+      targetWidth.placeholder = inputWidth;
+      targetHeight.placeholder = inputHeight;
+
+      // Run transcode pipeline
+      runTranscode();
+    }
+
+    // Get current options from UI
+    function getOptions() {
+      const format = formatSelect.value;
+      const quality = parseInt(jpegQuality.value, 10);
+      const tW = parseInt(targetWidth.value, 10) || 0;
+      const tH = parseInt(targetHeight.value, 10) || 0;
+      const maintainAspect = aspectRatioCheck.checked;
+      const resizer = resizerSelect.value;
+
+      const b = parseFloat(brightness.value);
+      const c = parseFloat(contrast.value);
+      const s = parseFloat(saturation.value);
+      const g = parseFloat(gamma.value);
+      const h = parseFloat(hueShift.value);
+
+      const eff = effectSelect.value;
+      const effParam = parseFloat(effectParam.value);
+
+      return {
+        outputFormat: format,
+        jpegQuality: quality,
+        targetWidth: tW,
+        targetHeight: tH,
+        maintainAspectRatio: maintainAspect,
+        resizeFilter: resizer,
+        rotation: rotationAngle,
+        flipH: flipHState,
+        flipV: flipVState,
+        enableCrop: false,
+        cropX: 0,
+        cropY: 0,
+        cropWidth: 0,
+        cropHeight: 0,
+        grayscale: grayscaleState,
+        invert: invertState,
+        sepia: sepiaState,
+        brightness: b,
+        contrast: c,
+        saturation: s,
+        gamma: g,
+        hueShift: h,
+        posterizeLevels: 0,
+        effect: eff,
+        effectParam: effParam
+      };
+    }
+
+    // Run transcode in C++ Wasm
+    function runTranscode() {
+      if (!wasmModule || !rawInputBytes) return;
+
+      const options = getOptions();
+      currentProcessedFormat = options.outputFormat;
+
+      const result = wasmModule.transcode(rawInputBytes, options);
+      if (!result.success) {
+        console.error('Transcode failed:', result.error);
+        statTotalTime.textContent = 'Error';
+        return;
+      }
+
+      currentProcessedBytes = result.data;
+
+      // Render output preview canvas from previewRGBA
+      const outW = result.outputWidth;
+      const outH = result.outputHeight;
+      outputCanvas.width = outW;
+      outputCanvas.height = outH;
+
+      if (options.resizeFilter === 'nearest') {
+        outputCanvas.classList.add('canvas-pixelated');
+      } else {
+        outputCanvas.classList.remove('canvas-pixelated');
+      }
+
+      const outImgData = new ImageData(
+        new Uint8ClampedArray(result.previewRGBA.buffer, result.previewRGBA.byteOffset, result.previewRGBA.byteLength),
+        outW,
+        outH
+      );
+      outputCtx.putImageData(outImgData, 0, 0);
+
+      // Update Output stats
+      outputDimensions.textContent = `${outW} × ${outH}`;
+      outputFileSize.textContent = `Size: ${formatBytes(result.outputSizeBytes)}`;
+      outputFormatBadge.textContent = `Target: ${result.outputFormat.toUpperCase()}`;
+
+      // Update timing & throughput stats
+      statTotalTime.textContent = `${result.totalTimeMs.toFixed(2)} ms`;
+      statDecodeTime.textContent = `${result.decodeTimeMs.toFixed(2)} ms`;
+      statProcessTime.textContent = `${result.processTimeMs.toFixed(2)} ms`;
+      statEncodeTime.textContent = `${result.encodeTimeMs.toFixed(2)} ms`;
+
+      statInputFmt.textContent = `In: ${inputFormat.toUpperCase()}`;
+      statOutputFmt.textContent = `Out: ${result.outputFormat.toUpperCase()}`;
+
+      const totalPixels = (outW * outH) / 1000000;
+      const sec = result.totalTimeMs / 1000;
+      const throughput = sec > 0 ? (totalPixels / sec).toFixed(1) : '0';
+      statThroughput.textContent = `${throughput} MP/s`;
+
+      const originalSize = rawInputBytes.byteLength;
+      const newSize = result.outputSizeBytes;
+      const diffRatio = ((newSize - originalSize) / originalSize) * 100;
+      const sign = diffRatio > 0 ? '+' : '';
+      statSizeChange.textContent = `${sign}${diffRatio.toFixed(1)}%`;
+      statSavings.textContent = `${formatBytes(originalSize)} → ${formatBytes(newSize)}`;
+
+      // Enable download button
+      btnDownload.disabled = false;
+    }
+
+    function triggerDebouncedTranscode() {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(runTranscode, 40);
+    }
+
+    // Download handler
+    function downloadProcessedImage() {
+      if (!currentProcessedBytes || currentProcessedBytes.byteLength === 0) return;
+
+      let mimeType = 'application/octet-stream';
+      let extension = currentProcessedFormat.toLowerCase();
+
+      if (extension === 'jpeg' || extension === 'jpg') {
+        mimeType = 'image/jpeg';
+        extension = 'jpg';
+      } else if (extension === 'png') {
+        mimeType = 'image/png';
+      } else if (extension === 'bmp') {
+        mimeType = 'image/bmp';
+      } else if (extension === 'tga') {
+        mimeType = 'image/x-tga';
+      } else if (extension === 'qoi') {
+        mimeType = 'image/qoi';
+      } else if (extension === 'rgba') {
+        mimeType = 'application/octet-stream';
+        extension = 'raw';
+      }
+
+      const blob = new Blob([currentProcessedBytes], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `transcoded_${Date.now()}.${extension}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // Event Listeners
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files.length > 0) {
+        handleFile(e.dataTransfer.files[0]);
+      }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        handleFile(e.target.files[0]);
+      }
+    });
+
+    function handleFile(file) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const buffer = new Uint8Array(ev.target.result);
+        const nameParts = file.name.split('.');
+        const ext = nameParts.length > 1 ? nameParts.pop() : 'png';
+        loadInputBuffer(buffer, file.name, ext);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    // Format selection
+    formatSelect.addEventListener('change', () => {
+      const isJpeg = formatSelect.value === 'jpeg';
+      jpegQualityGroup.classList.toggle('hidden', !isJpeg);
+      triggerDebouncedTranscode();
+    });
+
+    jpegQuality.addEventListener('input', () => {
+      jpegQualityVal.textContent = `${jpegQuality.value}%`;
+      triggerDebouncedTranscode();
+    });
+
+    // Dimension inputs
+    targetWidth.addEventListener('input', triggerDebouncedTranscode);
+    targetHeight.addEventListener('input', triggerDebouncedTranscode);
+    aspectRatioCheck.addEventListener('change', triggerDebouncedTranscode);
+    resizerSelect.addEventListener('change', triggerDebouncedTranscode);
+
+    // Scale presets
+    document.getElementById('btnScale100').addEventListener('click', () => {
+      targetWidth.value = inputWidth;
+      targetHeight.value = inputHeight;
+      triggerDebouncedTranscode();
+    });
+    document.getElementById('btnScale50').addEventListener('click', () => {
+      targetWidth.value = Math.round(inputWidth * 0.5);
+      targetHeight.value = Math.round(inputHeight * 0.5);
+      triggerDebouncedTranscode();
+    });
+    document.getElementById('btnScale25').addEventListener('click', () => {
+      targetWidth.value = Math.round(inputWidth * 0.25);
+      targetHeight.value = Math.round(inputHeight * 0.25);
+      triggerDebouncedTranscode();
+    });
+    document.getElementById('btnScale200').addEventListener('click', () => {
+      targetWidth.value = Math.round(inputWidth * 2.0);
+      targetHeight.value = Math.round(inputHeight * 2.0);
+      triggerDebouncedTranscode();
+    });
+
+    // Rotation & Flips
+    document.getElementById('btnRotCW').addEventListener('click', () => {
+      rotationAngle = (rotationAngle + 90) % 360;
+      triggerDebouncedTranscode();
+    });
+    document.getElementById('btnRotCCW').addEventListener('click', () => {
+      rotationAngle = (rotationAngle + 270) % 360;
+      triggerDebouncedTranscode();
+    });
+    document.getElementById('btnFlipH').addEventListener('click', (e) => {
+      flipHState = !flipHState;
+      e.target.classList.toggle('active', flipHState);
+      triggerDebouncedTranscode();
+    });
+    document.getElementById('btnFlipV').addEventListener('click', (e) => {
+      flipVState = !flipVState;
+      e.target.classList.toggle('active', flipVState);
+      triggerDebouncedTranscode();
+    });
+
+    // Color adjustments
+    brightness.addEventListener('input', () => {
+      brightnessVal.textContent = brightness.value;
+      triggerDebouncedTranscode();
+    });
+    contrast.addEventListener('input', () => {
+      contrastVal.textContent = contrast.value;
+      triggerDebouncedTranscode();
+    });
+    saturation.addEventListener('input', () => {
+      saturationVal.textContent = saturation.value;
+      triggerDebouncedTranscode();
+    });
+    gamma.addEventListener('input', () => {
+      gammaVal.textContent = gamma.value;
+      triggerDebouncedTranscode();
+    });
+    hueShift.addEventListener('input', () => {
+      hueShiftVal.textContent = `${hueShift.value}°`;
+      triggerDebouncedTranscode();
+    });
+
+    btnGrayscale.addEventListener('click', () => {
+      grayscaleState = !grayscaleState;
+      btnGrayscale.classList.toggle('active', grayscaleState);
+      triggerDebouncedTranscode();
+    });
+    btnInvert.addEventListener('click', () => {
+      invertState = !invertState;
+      btnInvert.classList.toggle('active', invertState);
+      triggerDebouncedTranscode();
+    });
+    btnSepia.addEventListener('click', () => {
+      sepiaState = !sepiaState;
+      btnSepia.classList.toggle('active', sepiaState);
+      triggerDebouncedTranscode();
+    });
+
+    btnResetColors.addEventListener('click', () => {
+      brightness.value = 0; brightnessVal.textContent = '0';
+      contrast.value = 0; contrastVal.textContent = '0';
+      saturation.value = 1.0; saturationVal.textContent = '1.0';
+      gamma.value = 1.0; gammaVal.textContent = '1.0';
+      hueShift.value = 0; hueShiftVal.textContent = '0°';
+      grayscaleState = false; btnGrayscale.classList.remove('active');
+      invertState = false; btnInvert.classList.remove('active');
+      sepiaState = false; btnSepia.classList.remove('active');
+      triggerDebouncedTranscode();
+    });
+
+    // Effects
+    effectSelect.addEventListener('change', () => {
+      const eff = effectSelect.value;
+      const needsParam = ['gaussian_blur', 'box_blur', 'sharpen', 'unsharp_mask', 'pixelate'].includes(eff);
+      effectParamGroup.classList.toggle('hidden', !needsParam);
+
+      if (eff === 'gaussian_blur' || eff === 'box_blur') {
+        effectParamLabel.textContent = 'Blur Radius (px)';
+        effectParam.min = 1; effectParam.max = 20; effectParam.step = 1; effectParam.value = 3;
+      } else if (eff === 'sharpen' || eff === 'unsharp_mask') {
+        effectParamLabel.textContent = 'Sharpen Strength';
+        effectParam.min = 0.2; effectParam.max = 5.0; effectParam.step = 0.2; effectParam.value = 1.5;
+      } else if (eff === 'pixelate') {
+        effectParamLabel.textContent = 'Pixel Block Size';
+        effectParam.min = 2; effectParam.max = 64; effectParam.step = 2; effectParam.value = 12;
+      }
+      effectParamVal.textContent = effectParam.value;
+      triggerDebouncedTranscode();
+    });
+
+    effectParam.addEventListener('input', () => {
+      effectParamVal.textContent = effectParam.value;
+      triggerDebouncedTranscode();
+    });
+
+    // Buttons
+    btnTranscode.addEventListener('click', runTranscode);
+    btnDownload.addEventListener('click', downloadProcessedImage);
+
+    // Samples
+    document.getElementById('btnSampleColor').addEventListener('click', () => generateSamplePattern('color'));
+    document.getElementById('btnSampleGrid').addEventListener('click', () => generateSamplePattern('grid'));
+    document.getElementById('btnSampleGradient').addEventListener('click', () => generateSamplePattern('gradient'));
+
+    // Kickoff
+    initWasm();
+  </script>
+</body>
+</html>

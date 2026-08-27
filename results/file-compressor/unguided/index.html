@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="High-performance client-side file compression and decompression using WebAssembly (LZ4, GZIP, ZLIB, RLE). Zero uploads, 100% private.">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <title>WasmCompress - High-Performance WebAssembly File Compressor & Decompressor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="container header-content">
+            <div class="brand">
+                <div class="brand-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="4 14 10 14 10 20"></polyline>
+                        <polyline points="20 10 14 10 14 4"></polyline>
+                        <line x1="14" y1="10" x2="21" y2="3"></line>
+                        <line x1="3" y1="21" x2="10" y2="14"></line>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="brand-title">WasmCompress</h1>
+                    <p class="brand-subtitle">C++ WebAssembly File Engine</p>
+                </div>
+            </div>
+            <div class="engine-badge" id="engine-status">
+                <span class="status-dot loading" id="status-dot"></span>
+                <span id="engine-status-text">Loading WebAssembly...</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="container app-main">
+        <!-- Mode Navigation Tabs -->
+        <nav class="mode-tabs" role="tablist" aria-label="Compression modes">
+            <button class="tab-btn active" id="tab-compress" role="tab" aria-selected="true" aria-controls="panel-compress">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Compress
+            </button>
+            <button class="tab-btn" id="tab-decompress" role="tab" aria-selected="false" aria-controls="panel-decompress">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                Decompress
+            </button>
+            <button class="tab-btn" id="tab-benchmark" role="tab" aria-selected="false" aria-controls="panel-benchmark">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+                Benchmark & Compare
+            </button>
+        </nav>
+
+        <div class="layout-grid">
+            <!-- Left Column: Upload & Options -->
+            <section class="card config-card">
+                <!-- Drop Zone -->
+                <div class="drop-zone" id="drop-zone" tabindex="0" role="region" aria-label="File upload drop zone">
+                    <input type="file" id="file-input" class="visually-hidden" aria-label="Choose file to process">
+                    <div class="drop-zone-content">
+                        <div class="drop-icon">
+                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                                <line x1="12" y1="18" x2="12" y2="12"></line>
+                                <line x1="9" y1="15" x2="12" y2="12"></line>
+                                <line x1="15" y1="15" x2="12" y2="12"></line>
+                            </svg>
+                        </div>
+                        <p class="drop-title">Drag & drop your file here</p>
+                        <p class="drop-subtitle">or <button type="button" class="btn-link" id="btn-browse">browse from your computer</button></p>
+                        <p class="drop-privacy">100% processed locally in your browser via WebAssembly</p>
+                    </div>
+                </div>
+
+                <!-- Sample Data Quick Loaders -->
+                <div class="sample-loaders">
+                    <span class="sample-label">Or load sample data:</span>
+                    <div class="sample-buttons">
+                        <button type="button" class="btn-chip" id="btn-sample-text">Log / Text File</button>
+                        <button type="button" class="btn-chip" id="btn-sample-json">JSON Dataset</button>
+                        <button type="button" class="btn-chip" id="btn-sample-binary">Repetitive Pattern</button>
+                    </div>
+                </div>
+
+                <!-- Selected File Info Banner -->
+                <div class="file-info-banner hidden" id="file-info-banner">
+                    <div class="file-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                            <polyline points="13 2 13 9 20 9"></polyline>
+                        </svg>
+                    </div>
+                    <div class="file-details">
+                        <div class="file-name" id="file-name">filename.txt</div>
+                        <div class="file-meta" id="file-meta">0 B &bull; Text</div>
+                    </div>
+                    <button type="button" class="btn-icon" id="btn-remove-file" title="Clear file" aria-label="Remove selected file">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Settings Controls -->
+                <div class="controls-section" id="controls-section">
+                    <!-- Format Selection -->
+                    <div class="form-group" id="group-algorithm">
+                        <label for="algo-select" class="form-label">Compression Algorithm</label>
+                        <select id="algo-select" class="form-select">
+                            <option value="lz4" selected>LZ4 (Frame) — Ultra Fast</option>
+                            <option value="gzip">GZIP (Deflate RFC 1952) — High Ratio</option>
+                            <option value="zlib">ZLIB (Deflate RFC 1950) — High Ratio</option>
+                            <option value="rle">Run-Length Encoding (RLE) — Fast Pattern</option>
+                        </select>
+                        <p class="form-help" id="algo-desc">High-speed real-time compression engine compiled from open-source C libraries.</p>
+                    </div>
+
+                    <!-- Decompress Format Selection (Auto/Manual) -->
+                    <div class="form-group hidden" id="group-decompress-format">
+                        <label for="decompress-format-select" class="form-label">Format Detection</label>
+                        <select id="decompress-format-select" class="form-select">
+                            <option value="auto" selected>Auto-Detect from File Header</option>
+                            <option value="lz4">LZ4 Frame (.lz4)</option>
+                            <option value="gzip">GZIP (.gz)</option>
+                            <option value="zlib">ZLIB (.zlib)</option>
+                            <option value="rle">RLE (.rle)</option>
+                        </select>
+                        <p class="form-help" id="detected-format-badge">Detected: <strong>Waiting for file</strong></p>
+                    </div>
+
+                    <!-- Compression Level (for compress mode) -->
+                    <div class="form-group" id="group-level">
+                        <div class="slider-header">
+                            <label for="level-slider" class="form-label">Compression Level</label>
+                            <span class="level-indicator" id="level-badge">Default (Fast)</span>
+                        </div>
+                        <input type="range" id="level-slider" min="0" max="12" value="0" class="form-range">
+                        <div class="slider-marks">
+                            <span>Fast</span>
+                            <span>Balanced</span>
+                            <span>Ultra</span>
+                        </div>
+                    </div>
+
+                    <!-- Action Button -->
+                    <button type="button" class="btn-primary" id="btn-process" disabled>
+                        <span id="btn-process-text">Select a File to Begin</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Right Column: Live Statistics & Output Results -->
+            <section class="card results-card" id="results-card">
+                <div class="results-header">
+                    <h2 class="card-title">Real-Time Metrics & Output</h2>
+                    <span class="status-tag ready" id="result-status-tag">Ready</span>
+                </div>
+
+                <!-- Statistics Grid -->
+                <div class="stats-grid" id="stats-container">
+                    <div class="stat-box">
+                        <span class="stat-label">Original Size</span>
+                        <span class="stat-value" id="stat-orig-size">—</span>
+                        <span class="stat-sub" id="stat-orig-bytes">0 bytes</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-label">Output Size</span>
+                        <span class="stat-value" id="stat-out-size">—</span>
+                        <span class="stat-sub" id="stat-out-bytes">0 bytes</span>
+                    </div>
+                    <div class="stat-box accent">
+                        <span class="stat-label">Size Reduction</span>
+                        <span class="stat-value" id="stat-ratio">—</span>
+                        <span class="stat-sub" id="stat-factor">—</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-label">Duration</span>
+                        <span class="stat-value" id="stat-time">—</span>
+                        <span class="stat-sub" id="stat-speed">—</span>
+                    </div>
+                </div>
+
+                <!-- Visual Size Comparison Bar -->
+                <div class="comparison-bar-container" id="bar-container">
+                    <div class="bar-labels">
+                        <span>Original: <strong id="bar-label-orig">0 B</strong></span>
+                        <span>Compressed: <strong id="bar-label-comp">0 B</strong></span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill" id="bar-fill" style="width: 0%;"></div>
+                    </div>
+                </div>
+
+                <!-- Action Download Section -->
+                <div class="action-section" id="action-section">
+                    <button type="button" class="btn-download hidden" id="btn-download">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        <span id="download-btn-text">Download Processed File</span>
+                    </button>
+                </div>
+
+                <!-- Benchmark Comparison Table (Visible in Benchmark Mode) -->
+                <div class="benchmark-container hidden" id="benchmark-container">
+                    <h3 class="benchmark-title">Algorithm Performance Comparison</h3>
+                    <div class="table-responsive">
+                        <table class="benchmark-table" id="benchmark-table">
+                            <thead>
+                                <tr>
+                                    <th>Algorithm</th>
+                                    <th>Compressed</th>
+                                    <th>Ratio</th>
+                                    <th>Comp Time</th>
+                                    <th>Comp Speed</th>
+                                    <th>Decomp Speed</th>
+                                    <th>Integrity</th>
+                                </tr>
+                            </thead>
+                            <tbody id="benchmark-tbody">
+                                <!-- Populated dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Data Inspector / Hex Preview -->
+                <div class="hex-section" id="hex-section">
+                    <div class="hex-header">
+                        <span class="hex-title">Byte Inspector & Header Preview</span>
+                        <button type="button" class="btn-subtle" id="btn-toggle-hex">Show Hex</button>
+                    </div>
+                    <div class="hex-content hidden" id="hex-content">
+                        <div class="hex-pane">
+                            <span class="hex-pane-title">Input Buffer (First 64 Bytes)</span>
+                            <pre class="hex-view" id="hex-input-view">No file loaded</pre>
+                        </div>
+                        <div class="hex-pane">
+                            <span class="hex-pane-title">Output Buffer (First 64 Bytes)</span>
+                            <pre class="hex-view" id="hex-output-view">Not processed yet</pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Algorithm Features Information Section -->
+        <section class="features-section">
+            <h2 class="features-heading">Compiled WebAssembly Engine Features</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-header">
+                        <span class="algo-tag lz4">LZ4</span>
+                        <h3>LZ4 Frame Engine</h3>
+                    </div>
+                    <p>Compiled from official open-source LZ4 C library. Delivers compression and decompression speeds exceeding 500 MB/s directly within the WebAssembly virtual machine.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-header">
+                        <span class="algo-tag gzip">GZIP / ZLIB</span>
+                        <h3>Zlib Deflate Engine</h3>
+                    </div>
+                    <p>Compiled from official open-source Zlib C source code. Fully standards-compliant RFC 1952 (GZIP) and RFC 1950 (ZLIB) with variable compression levels 1 to 9.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-header">
+                        <span class="algo-tag rle">RLE</span>
+                        <h3>Run-Length Encoder</h3>
+                    </div>
+                    <p>Custom PackBits-style run-length compression written in C++ with 64-bit size verification headers and safe bounds checking.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="app-footer">
+        <div class="container footer-content">
+            <p>WasmCompress &bull; Client-Side WebAssembly File Compression &bull; Powered by Emscripten, LZ4, and Zlib</p>
+        </div>
+    </footer>
+
+    <!-- Application Script -->
+    <script type="module" src="app.js"></script>
+</body>
+</html>

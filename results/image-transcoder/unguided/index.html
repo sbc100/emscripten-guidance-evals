@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Transcoder & Processing Studio - C++ WebAssembly</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Header Bar -->
+  <header class="app-header">
+    <div class="header-brand">
+      <div class="brand-icon">⚡</div>
+      <div>
+        <h1 class="brand-title">Image Transcoder Studio</h1>
+        <p class="brand-subtitle">High-Performance Image Manipulation in C++ &amp; WebAssembly</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <div class="engine-status" id="engineStatus">
+        <span class="status-dot"></span>
+        <span id="engineStatusText">Initializing WASM...</span>
+      </div>
+      <button class="btn btn-outline" id="btnResetAll" title="Reset all settings to default">Reset All</button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="app-container">
+
+    <!-- Left Column: Stage & Previews -->
+    <section class="stage-panel">
+
+      <!-- Upload Dropzone -->
+      <div class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" accept="image/*,.png,.jpg,.jpeg,.bmp,.tga,.qoi,.webp,.gif" style="display:none">
+        <div class="dropzone-icon">📁</div>
+        <div class="dropzone-text">Drop an image here or click to browse</div>
+        <div class="dropzone-subtext">Supports PNG, JPEG, BMP, TGA, QOI, GIF, WebP &bull; Paste from clipboard (Ctrl+V)</div>
+        <div class="dropzone-samples">
+          <span style="font-size:0.75rem; color:var(--text-muted);">Quick Samples:</span>
+          <button class="sample-btn" data-sample="geometry">🎨 Geometry Pattern</button>
+          <button class="sample-btn" data-sample="gradient">🌈 Gradient BMP</button>
+          <button class="sample-btn" data-sample="photo">📸 Landscape Photo</button>
+        </div>
+      </div>
+
+      <!-- Viewport Controls & Toolbar -->
+      <div class="viewport-toolbar">
+        <div class="view-modes">
+          <button class="mode-btn active" data-mode="sideBySide" id="modeSideBySide">Side-by-Side</button>
+          <button class="mode-btn" data-mode="split" id="modeSplit">Split Comparison</button>
+          <button class="mode-btn" data-mode="outputOnly" id="modeOutputOnly">Transcoded Only</button>
+        </div>
+
+        <div class="viewport-actions">
+          <button class="btn btn-outline" id="btnZoomFit">Fit</button>
+          <button class="btn btn-outline" id="btnZoom100">1:1</button>
+          <button class="btn btn-outline" id="btnCopyClipboard" title="Copy to Clipboard">📋 Copy</button>
+        </div>
+      </div>
+
+      <!-- Canvas Stage -->
+      <div class="canvas-stage" id="canvasStage">
+
+        <!-- Side-by-Side Mode -->
+        <div class="side-by-side-container" id="sideBySideContainer">
+          <!-- Before Card -->
+          <div class="canvas-card">
+            <div class="canvas-card-header">
+              <span class="canvas-card-title">Original (Before)</span>
+              <span class="canvas-card-meta" id="originalMeta">--</span>
+            </div>
+            <div class="canvas-wrapper">
+              <canvas id="canvasOriginal"></canvas>
+            </div>
+          </div>
+
+          <!-- After Card -->
+          <div class="canvas-card">
+            <div class="canvas-card-header">
+              <span class="canvas-card-title">Transcoded (After)</span>
+              <span class="canvas-card-meta" id="transcodedMeta">--</span>
+            </div>
+            <div class="canvas-wrapper">
+              <canvas id="canvasTranscoded"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Split Slider Mode -->
+        <div class="split-view-container" id="splitViewContainer" style="display:none;">
+          <div class="split-canvas-wrapper" id="splitCanvasWrapper">
+            <canvas id="canvasSplit"></canvas>
+            <div class="split-slider-line" id="splitSliderLine">
+              <div class="split-slider-handle">↔</div>
+            </div>
+            <span class="split-badge split-badge-before">Original</span>
+            <span class="split-badge split-badge-after">Transcoded</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Metrics & Dashboard -->
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <span class="metric-label">C++ WASM Time</span>
+          <span class="metric-value metric-badge highlight" id="metricTime">-- ms</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Original Size</span>
+          <span class="metric-value" id="metricOrigSize">-- KB</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Transcoded Size</span>
+          <span class="metric-value" id="metricTransSize">-- KB</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Size Delta</span>
+          <span class="metric-value metric-badge" id="metricDelta">-- %</span>
+        </div>
+      </div>
+
+      <!-- Histogram Chart -->
+      <div class="histogram-container">
+        <div class="histogram-header">
+          <span class="histogram-title">Color Channel Histogram (Computed in C++)</span>
+          <span style="font-size:0.7rem; color:var(--text-muted); font-family:var(--font-mono)">R &bull; G &bull; B &bull; Luma</span>
+        </div>
+        <canvas id="canvasHistogram" class="histogram-canvas" width="512" height="64"></canvas>
+      </div>
+
+    </section>
+
+    <!-- Right Column: Control Panel -->
+    <aside class="controls-panel">
+
+      <!-- Navigation Tabs -->
+      <nav class="tabs-nav">
+        <button class="tab-btn active" data-tab="tabFormat">Format</button>
+        <button class="tab-btn" data-tab="tabGeometry">Geometry</button>
+        <button class="tab-btn" data-tab="tabColor">Color</button>
+        <button class="tab-btn" data-tab="tabFilters">Filters</button>
+      </nav>
+
+      <!-- Tab Content Area -->
+      <div class="tab-content">
+
+        <!-- TAB 1: Format & Export -->
+        <div class="tab-pane active" id="tabFormat">
+          <div class="control-group">
+            <div class="control-header">
+              <label class="control-label" for="selectFormat">Target Format</label>
+            </div>
+            <select id="selectFormat">
+              <option value="png" selected>PNG (.png) - Lossless</option>
+              <option value="jpeg">JPEG (.jpg) - High Compression</option>
+              <option value="bmp">BMP (.bmp) - Uncompressed Bitmap</option>
+              <option value="tga">TGA (.tga) - Truevision Targa</option>
+              <option value="qoi">QOI (.qoi) - Quite OK Image</option>
+            </select>
+          </div>
+
+          <!-- JPEG Quality -->
+          <div class="control-group" id="groupJpegQuality" style="display:none;">
+            <div class="control-header">
+              <label class="control-label" for="sliderQuality">JPEG Quality</label>
+              <span class="control-value" id="valQuality">85%</span>
+            </div>
+            <input type="range" id="sliderQuality" min="1" max="100" value="85">
+          </div>
+
+          <!-- PNG Compression -->
+          <div class="control-group" id="groupPngCompression">
+            <div class="control-header">
+              <label class="control-label" for="sliderPngComp">PNG Compression Level</label>
+              <span class="control-value" id="valPngComp">Level 6</span>
+            </div>
+            <input type="range" id="sliderPngComp" min="0" max="9" value="6">
+          </div>
+
+          <div class="info-note" id="formatInfoNote">
+            PNG provides lossless compression with alpha channel transparency.
+          </div>
+        </div>
+
+        <!-- TAB 2: Geometry & Resizing -->
+        <div class="tab-pane" id="tabGeometry">
+          <!-- Scale Slider -->
+          <div class="control-group">
+            <div class="control-header">
+              <label class="control-label" for="sliderScale">Scale</label>
+              <span class="control-value" id="valScale">100%</span>
+            </div>
+            <input type="range" id="sliderScale" min="10" max="200" value="100" step="5">
+            <div class="btn-grid-4" style="margin-top:0.25rem;">
+              <button class="btn btn-outline" data-scale="25">25%</button>
+              <button class="btn btn-outline" data-scale="50">50%</button>
+              <button class="btn btn-outline" data-scale="75">75%</button>
+              <button class="btn btn-outline" data-scale="100">100%</button>
+            </div>
+          </div>
+
+          <!-- Dimensions Input -->
+          <div class="btn-grid-2">
+            <div class="control-group">
+              <label class="control-label" for="inputWidth">Width (px)</label>
+              <input type="number" id="inputWidth" min="1" max="8192" placeholder="Auto">
+            </div>
+            <div class="control-group">
+              <label class="control-label" for="inputHeight">Height (px)</label>
+              <input type="number" id="inputHeight" min="1" max="8192" placeholder="Auto">
+            </div>
+          </div>
+
+          <label class="checkbox-row">
+            <input type="checkbox" id="chkLockAspect" checked>
+            <span>Lock Aspect Ratio</span>
+          </label>
+
+          <!-- Resampling Filter -->
+          <div class="control-group">
+            <label class="control-label" for="selectResizeAlgo">Resampling Algorithm</label>
+            <select id="selectResizeAlgo">
+              <option value="mitchell" selected>Mitchell-Netravali (Bicubic Smooth)</option>
+              <option value="bilinear">Bilinear (Fast &amp; Smooth)</option>
+              <option value="catmullrom">Catmull-Rom (Bicubic Sharp)</option>
+              <option value="nearest">Nearest Neighbor (Pixel Art)</option>
+              <option value="box">Box Filter</option>
+            </select>
+          </div>
+
+          <!-- Transforms -->
+          <div class="control-group">
+            <label class="control-label">Transformations</label>
+            <div class="btn-grid-3">
+              <button class="btn" id="btnRotCCW">↺ 90° CCW</button>
+              <button class="btn" id="btnRotCW">↻ 90° CW</button>
+              <button class="btn" id="btnRot180">↻ 180°</button>
+            </div>
+            <div class="btn-grid-2" style="margin-top:0.4rem;">
+              <button class="btn" id="btnFlipH">↔ Flip Horizontal</button>
+              <button class="btn" id="btnFlipV">↕ Flip Vertical</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: Color & Tonal Adjustments -->
+        <div class="tab-pane" id="tabColor">
+          <div class="control-group">
+            <div class="control-header">
+              <label class="control-label" for="sliderBrightness">Brightness</label>
+              <span class="control-value" id="valBrightness">0</span>
+            </div>
+            <input type="range" id="sliderBrightness" min="-100" max="100" value="0">
+          </div>
+
+          <div class="control-group">
+            <div class="control-header">
+              <label class="control-label" for="sliderContrast">Contrast</label>
+              <span class="control-value" id="valContrast">0</span>
+            </div>
+            <input type="range" id="sliderContrast" min="-100" max="100" value="0">
+          </div>
+
+          <div class="control-group">
+            <div class="control-header">
+              <label class="control-label" for="sliderSaturation">Saturation</label>
+              <span class="control-value" id="valSaturation">0</span>
+            </div>
+            <input type="range" id="sliderSaturation" min="-100" max="100" value="0">
+          </div>
+
+          <div class="control-group">
+            <div class="control-header">
+              <label class="control-label" for="sliderExposure">Exposure</label>
+              <span class="control-value" id="valExposure">0</span>
+            </div>
+            <input type="range" id="sliderExposure" min="-100" max="100" value="0">
+          </div>
+
+          <div class="control-group">
+            <div class="control-header">
+              <label class="control-label" for="sliderTemperature">Temperature (Cool/Warm)</label>
+              <span class="control-value" id="valTemperature">0</span>
+            </div>
+            <input type="range" id="sliderTemperature" min="-100" max="100" value="0">
+          </div>
+
+          <div class="control-group">
+            <div class="control-header">
+              <label class="control-label" for="sliderTint">Tint (Green/Magenta)</label>
+              <span class="control-value" id="valTint">0</span>
+            </div>
+            <input type="range" id="sliderTint" min="-100" max="100" value="0">
+          </div>
+
+          <div class="control-group">
+            <div class="control-header">
+              <label class="control-label" for="sliderHue">Hue Rotation</label>
+              <span class="control-value" id="valHue">0°</span>
+            </div>
+            <input type="range" id="sliderHue" min="0" max="360" value="0">
+          </div>
+
+          <div class="control-group">
+            <div class="control-header">
+              <label class="control-label" for="sliderGamma">Gamma</label>
+              <span class="control-value" id="valGamma">1.0</span>
+            </div>
+            <input type="range" id="sliderGamma" min="20" max="300" value="100">
+          </div>
+
+          <button class="btn btn-outline" id="btnResetColor">Reset Color Adjustments</button>
+        </div>
+
+        <!-- TAB 4: Filters & Artistic Effects -->
+        <div class="tab-pane" id="tabFilters">
+          <!-- Preset Chips -->
+          <div class="control-group">
+            <label class="control-label">Filter Presets</label>
+            <div class="preset-chips">
+              <button class="chip active" data-preset="none">None</button>
+              <button class="chip" data-preset="grayscale">Grayscale</button>
+              <button class="chip" data-preset="sepia">Sepia</button>
+              <button class="chip" data-preset="invert">Invert</button>
+              <button class="chip" data-preset="vivid">Vivid</button>
+              <button class="chip" data-preset="cyberpunk">Cyberpunk</button>
+              <button class="chip" data-preset="vintage">Vintage</button>
+              <button class="chip" data-preset="dither">Retro Dither</button>
+            </div>
+          </div>
+
+          <!-- Blur & Sharpen -->
+          <div class="control-group">
+            <div class="control-header">
+              <label class="control-label" for="sliderBlur">Gaussian Blur</label>
+              <span class="control-value" id="valBlur">0 px</span>
+            </div>
+            <input type="range" id="sliderBlur" min="0" max="25" value="0">
+          </div>
+
+          <div class="control-group">
+            <div class="control-header">
+              <label class="control-label" for="sliderSharpen">Sharpen</label>
+              <span class="control-value" id="valSharpen">0%</span>
+            </div>
+            <input type="range" id="sliderSharpen" min="0" max="100" value="0">
+          </div>
+
+          <!-- Convolution Toggles -->
+          <div class="btn-grid-2">
+            <button class="btn" id="btnSobel">Sobel Edge Detect</button>
+            <button class="btn" id="btnEmboss">Emboss 3D</button>
+          </div>
+
+          <!-- Vignette -->
+          <div class="control-group">
+            <div class="control-header">
+              <label class="control-label" for="sliderVignette">Vignette</label>
+              <span class="control-value" id="valVignette">0%</span>
+            </div>
+            <input type="range" id="sliderVignette" min="0" max="100" value="0">
+          </div>
+
+          <!-- Pixelate -->
+          <div class="control-group">
+            <div class="control-header">
+              <label class="control-label" for="sliderPixelate">Pixelate Block Size</label>
+              <span class="control-value" id="valPixelate">0 px</span>
+            </div>
+            <input type="range" id="sliderPixelate" min="0" max="32" value="0">
+          </div>
+
+          <!-- Posterize -->
+          <div class="control-group">
+            <div class="control-header">
+              <label class="control-label" for="sliderPosterize">Posterize Levels</label>
+              <span class="control-value" id="valPosterize">Off</span>
+            </div>
+            <input type="range" id="sliderPosterize" min="0" max="16" value="0">
+          </div>
+
+          <!-- Threshold (B&W) -->
+          <div class="control-group">
+            <div class="control-header">
+              <label class="control-label" for="sliderThreshold">Threshold / Binarize</label>
+              <span class="control-value" id="valThreshold">Off</span>
+            </div>
+            <input type="range" id="sliderThreshold" min="-1" max="255" value="-1">
+          </div>
+
+          <!-- Dither Mode -->
+          <div class="control-group">
+            <label class="control-label" for="selectDither">Floyd-Steinberg Dithering</label>
+            <select id="selectDither">
+              <option value="none" selected>None (Standard)</option>
+              <option value="monochrome">1-Bit Monochrome (B&amp;W Dither)</option>
+              <option value="palette8">8-Color Retro Palette</option>
+            </select>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Panel Footer / Download Action -->
+      <div class="panel-footer">
+        <button class="btn btn-primary" id="btnDownload" style="padding:0.75rem; font-size:0.95rem;">
+          ⬇ Download Processed Image (<span id="downloadFormatLabel">PNG</span>)
+        </button>
+      </div>
+
+    </aside>
+
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

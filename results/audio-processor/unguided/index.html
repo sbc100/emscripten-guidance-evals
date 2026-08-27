@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebAssembly Audio Waveform Processor & Tone Generator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="brand-group">
+                <div class="logo-badge">⚡</div>
+                <div class="title-wrap">
+                    <h1>WASM Audio Processor & Synthesizer</h1>
+                    <p>High-Performance C++ DSP Engine compiled to WebAssembly via Emscripten</p>
+                </div>
+            </div>
+            <div class="system-status">
+                <div class="status-badge">
+                    <span id="wasmDot" class="status-dot"></span>
+                    <span id="wasmText">WASM: Initializing</span>
+                </div>
+                <div class="status-badge">
+                    <span id="audioDot" class="status-dot"></span>
+                    <span id="audioText">Audio: Suspended</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Master Toolbar -->
+        <section class="master-bar">
+            <div class="main-controls">
+                <button id="playBtn" class="btn btn-primary">▶ Play Continuous Tone</button>
+                <button id="stopBtn" class="btn btn-secondary">⏹ Stop</button>
+            </div>
+            <div class="master-sliders">
+                <div class="control-row" style="min-width: 180px;">
+                    <div class="control-label-row">
+                        <span>Master Volume</span>
+                        <span id="volumeVal" class="control-val">70%</span>
+                    </div>
+                    <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.7">
+                </div>
+            </div>
+            <div class="presets-row">
+                <span style="font-size: 0.8rem; color: var(--text-secondary); align-self: center;">Presets:</span>
+                <button class="btn btn-secondary preset-btn" data-preset="synth_lead">80s Lead</button>
+                <button class="btn btn-secondary preset-btn" data-preset="cyber_bass">Cyber Bass</button>
+                <button class="btn btn-secondary preset-btn" data-preset="ambient_pad">Ambient Pad</button>
+                <button class="btn btn-secondary preset-btn" data-preset="fm_bell">FM Bell</button>
+                <button class="btn btn-secondary preset-btn" data-preset="chiptune">8-Bit</button>
+            </div>
+        </section>
+
+        <!-- Canvas Visualizer Section -->
+        <section class="visualizer-card">
+            <div class="vis-header">
+                <div class="vis-tabs">
+                    <button class="vis-tab active" data-mode="oscilloscope">Oscilloscope</button>
+                    <button class="vis-tab" data-mode="spectrum">Spectrum Analyzer</button>
+                    <button class="vis-tab" data-mode="radial">Radial Radar</button>
+                </div>
+                <div class="vis-metrics">
+                    <div>PEAK: <span id="metricPeak" class="metric-val">-inf dBFS</span></div>
+                    <div>WASM EXEC: <span id="metricCpu" class="metric-val">0.0 µs</span></div>
+                </div>
+            </div>
+            <div class="canvas-container">
+                <canvas id="visCanvas"></canvas>
+            </div>
+        </section>
+
+        <!-- Main DSP Grid -->
+        <div class="grid-layout">
+            <!-- 1. Waveform Generator Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="icon">〰</span> Waveform Generator
+                    </div>
+                </div>
+
+                <div class="wave-selector-grid">
+                    <button class="wave-btn active" data-wave="0">
+                        <svg viewBox="0 0 24 16"><path d="M2,8 C6,0 6,16 12,8 C18,0 18,16 22,8"/></svg>
+                        Sine
+                    </button>
+                    <button class="wave-btn" data-wave="1">
+                        <svg viewBox="0 0 24 16"><path d="M2,14 L2,2 L12,2 L12,14 L22,14 L22,2"/></svg>
+                        Square
+                    </button>
+                    <button class="wave-btn" data-wave="2">
+                        <svg viewBox="0 0 24 16"><path d="M2,14 L7,2 L17,14 L22,2"/></svg>
+                        Triangle
+                    </button>
+                    <button class="wave-btn" data-wave="3">
+                        <svg viewBox="0 0 24 16"><path d="M2,14 L12,2 L12,14 L22,2"/></svg>
+                        Sawtooth
+                    </button>
+                    <button class="wave-btn" data-wave="6">
+                        <svg viewBox="0 0 24 16"><path d="M2,14 L2,2 L8,2 L8,14 L22,14"/></svg>
+                        Pulse
+                    </button>
+                    <button class="wave-btn" data-wave="4">
+                        <svg viewBox="0 0 24 16"><path d="M2,8 L4,3 L6,13 L8,6 L10,10 L12,2 L14,14 L16,5 L18,11 L20,7 L22,9"/></svg>
+                        White
+                    </button>
+                    <button class="wave-btn" data-wave="5">
+                        <svg viewBox="0 0 24 16"><path d="M2,8 L5,5 L8,11 L11,4 L14,12 L17,7 L20,9 L22,8"/></svg>
+                        Pink
+                    </button>
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label-row">
+                        <span>Tone Frequency</span>
+                        <div>
+                            <span id="freqVal" class="control-val">440.0 Hz</span>
+                            <span id="noteName" style="color: var(--accent-purple); font-weight: bold; margin-left: 0.4rem;">A4</span>
+                        </div>
+                    </div>
+                    <input type="range" id="freqSlider" min="0" max="1" step="0.001" value="0.560">
+                    <div style="display: flex; gap: 0.5rem; margin-top: 0.25rem;">
+                        <button id="octaveDown" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; flex: 1;">-1 Octave</button>
+                        <button id="octaveUp" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; flex: 1;">+1 Octave</button>
+                    </div>
+                </div>
+
+                <div id="pulseWidthControl" class="control-row" style="display: none;">
+                    <div class="control-label-row">
+                        <span>Pulse Width (PWM)</span>
+                        <span id="pwVal" class="control-val">50%</span>
+                    </div>
+                    <input type="range" id="pwSlider" min="1" max="99" step="1" value="50">
+                </div>
+
+                <div style="border-top: 1px solid var(--border-color); padding-top: 0.75rem; display: flex; flex-direction: column; gap: 0.75rem;">
+                    <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">FM Synthesis Modulation</span>
+                    <div class="control-row">
+                        <div class="control-label-row">
+                            <span>Modulator Frequency</span>
+                            <span id="fmFreqVal" class="control-val">0 Hz</span>
+                        </div>
+                        <input type="range" id="fmFreqSlider" min="0" max="1000" step="1" value="0">
+                    </div>
+                    <div class="control-row">
+                        <div class="control-label-row">
+                            <span>Modulator Depth</span>
+                            <span id="fmDepthVal" class="control-val">0 Hz</span>
+                        </div>
+                        <input type="range" id="fmDepthSlider" min="0" max="1000" step="1" value="0">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. Digital Biquad Filter Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="icon">🎚</span> Digital Biquad Filter
+                    </div>
+                    <label class="toggle-switch">
+                        <span>Active</span>
+                        <input type="checkbox" id="filterToggle">
+                    </label>
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label-row">
+                        <span>Filter Type</span>
+                    </div>
+                    <select id="filterTypeSelect" style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color); padding: 0.5rem; border-radius: 6px; outline: none;">
+                        <option value="0">Low-Pass Filter (LPF)</option>
+                        <option value="1">High-Pass Filter (HPF)</option>
+                        <option value="2">Band-Pass Filter (BPF)</option>
+                        <option value="3">Notch Filter</option>
+                    </select>
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label-row">
+                        <span>Cutoff Frequency</span>
+                        <span id="cutoffVal" class="control-val">2.50 kHz</span>
+                    </div>
+                    <input type="range" id="cutoffSlider" min="0" max="1" step="0.001" value="0.7">
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label-row">
+                        <span>Resonance (Q Factor)</span>
+                        <span id="qVal" class="control-val">1.0</span>
+                    </div>
+                    <input type="range" id="qSlider" min="0.1" max="15.0" step="0.1" value="1.0">
+                </div>
+
+                <div style="font-size: 0.78rem; color: var(--text-muted); background: var(--bg-card); padding: 0.75rem; border-radius: 6px; line-height: 1.4;">
+                    Digital transposed Direct Form II biquad filter with exact pole-zero placement running in C++ WebAssembly.
+                </div>
+            </div>
+
+            <!-- 3. Delay & Echo Effect Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="icon">🔁</span> Delay & Echo Effect
+                    </div>
+                    <label class="toggle-switch">
+                        <span>Active</span>
+                        <input type="checkbox" id="delayToggle">
+                    </label>
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label-row">
+                        <span>Delay Time</span>
+                        <span id="delayTimeVal" class="control-val">300 ms</span>
+                    </div>
+                    <input type="range" id="delayTimeSlider" min="10" max="1000" step="1" value="300">
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label-row">
+                        <span>Feedback</span>
+                        <span id="delayFeedbackVal" class="control-val">45%</span>
+                    </div>
+                    <input type="range" id="delayFeedbackSlider" min="0" max="90" step="1" value="45">
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label-row">
+                        <span>Wet / Dry Mix</span>
+                        <span id="delayMixVal" class="control-val">40%</span>
+                    </div>
+                    <input type="range" id="delayMixSlider" min="0" max="100" step="1" value="40">
+                </div>
+
+                <div style="font-size: 0.78rem; color: var(--text-muted); background: var(--bg-card); padding: 0.75rem; border-radius: 6px; line-height: 1.4;">
+                    Circular buffer delay line with sub-sample linear interpolation and hyperbolic tangent saturation in feedback loop.
+                </div>
+            </div>
+
+            <!-- 4. Distortion & Bitcrusher Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="icon">⚡</span> Overdrive & Bitcrusher
+                    </div>
+                </div>
+
+                <!-- Overdrive -->
+                <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Analog Waveshaper Distortion</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="distToggle">
+                        </label>
+                    </div>
+                    <div class="control-row">
+                        <div class="control-label-row">
+                            <span>Drive Gain</span>
+                            <span id="distDriveVal" class="control-val">4.0x</span>
+                        </div>
+                        <input type="range" id="distDriveSlider" min="1" max="25" step="0.5" value="4.0">
+                    </div>
+                </div>
+
+                <hr style="border: none; border-top: 1px solid var(--border-color);">
+
+                <!-- Bitcrusher -->
+                <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Vintage Bitcrusher</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="bitcrushToggle">
+                        </label>
+                    </div>
+                    <div class="control-row">
+                        <div class="control-label-row">
+                            <span>Bit Depth</span>
+                            <span id="bitDepthVal" class="control-val">8-bit</span>
+                        </div>
+                        <input type="range" id="bitDepthSlider" min="2" max="16" step="1" value="8">
+                    </div>
+                    <div class="control-row">
+                        <div class="control-label-row">
+                            <span>Downsampling</span>
+                            <span id="downsampleVal" class="control-val">1x</span>
+                        </div>
+                        <input type="range" id="downsampleSlider" min="1" max="16" step="1" value="1">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5. ADSR Envelope Generator Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="icon">📈</span> ADSR Envelope Generator
+                    </div>
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label-row">
+                        <span>Attack Time</span>
+                        <span id="attackVal" class="control-val">15 ms</span>
+                    </div>
+                    <input type="range" id="attackSlider" min="1" max="1000" step="1" value="15">
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label-row">
+                        <span>Decay Time</span>
+                        <span id="decayVal" class="control-val">150 ms</span>
+                    </div>
+                    <input type="range" id="decaySlider" min="5" max="2000" step="5" value="150">
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label-row">
+                        <span>Sustain Level</span>
+                        <span id="sustainVal" class="control-val">80%</span>
+                    </div>
+                    <input type="range" id="sustainSlider" min="0" max="100" step="1" value="80">
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label-row">
+                        <span>Release Time</span>
+                        <span id="releaseVal" class="control-val">300 ms</span>
+                    </div>
+                    <input type="range" id="releaseSlider" min="10" max="3000" step="10" value="300">
+                </div>
+            </div>
+
+            <!-- 6. One-Shot Buffer Generator & Export Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="icon">💾</span> Offline Buffer & WAV Export
+                    </div>
+                </div>
+
+                <p style="font-size: 0.85rem; color: var(--text-secondary);">
+                    Generate a full floating-point PCM audio buffer using C++ algorithms and play via AudioBufferSourceNode or export to standard 16-bit WAV file.
+                </p>
+
+                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                    <button id="renderBufferBtn" class="btn btn-secondary" style="flex: 1;">
+                        ▶ Render & Play Buffer
+                    </button>
+                    <button id="exportWavBtn" class="btn btn-primary" style="flex: 1;">
+                        💾 Export WAV Audio
+                    </button>
+                </div>
+
+                <div style="border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+                    <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 0.5rem;">
+                        Process Audio File with C++ DSP:
+                    </span>
+                    <input type="file" id="audioFileInput" accept="audio/*" style="display: none;">
+                    <div id="dropzone" class="file-dropzone">
+                        <p>📁 Drag & drop an audio file here, or click to upload</p>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+                            Supports WAV, MP3, OGG, AAC
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Virtual Piano Keyboard -->
+        <section class="keyboard-section">
+            <div class="keyboard-controls">
+                <div class="card-title">
+                    <span class="icon">🎹</span> Interactive Virtual Keyboard & Poly Synth
+                </div>
+                <span style="font-size: 0.8rem; color: var(--text-secondary);">
+                    Play with mouse/touch or use computer keys: <strong style="color: var(--accent-cyan);">A, W, S, E, D, F, T, G, Y, H, U, J, K</strong>
+                </span>
+            </div>
+            <div id="pianoKeys" class="piano-keys"></div>
+        </section>
+
+        <!-- Footer -->
+        <footer>
+            <p>WebAssembly Audio Processor Engine • Built with C++, Emscripten & Web Audio API</p>
+        </footer>
+    </div>
+
+    <!-- Application Script (ES Module) -->
+    <script type="module" src="app.js"></script>
+</body>
+</html>

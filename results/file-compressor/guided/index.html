@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wasm File Compressor & Decompressor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="header-badge">
+        <span id="statusDot" class="status-dot"></span>
+        <span id="statusText">Initializing WebAssembly...</span>
+      </div>
+      <h1>WebAssembly File Compressor</h1>
+      <p class="subtitle">High-performance client-side file compression and decompression powered by C++, Zstandard, Zlib, LZ4, and WebAssembly.</p>
+    </header>
+
+    <div class="tabs" role="tablist">
+      <button id="tabCompress" class="tab-btn active" role="tab">
+        <span>🗜️</span> Compress File
+      </button>
+      <button id="tabDecompress" class="tab-btn" role="tab">
+        <span>🔓</span> Decompress File
+      </button>
+      <button id="tabBenchmark" class="tab-btn" role="tab">
+        <span>⚡</span> Benchmark All Algorithms
+      </button>
+    </div>
+
+    <div id="alertBox" class="alert">
+      <span id="alertMsg"></span>
+    </div>
+
+    <div class="main-card">
+      <!-- Drag and drop zone -->
+      <div id="dropzone" class="dropzone">
+        <div class="dropzone-icon">📁</div>
+        <div class="dropzone-text">Choose a file or drag & drop it here</div>
+        <div class="dropzone-hint">Supports any file type of any size • 100% processed client-side in browser</div>
+        <input type="file" id="fileInput" class="file-input">
+      </div>
+
+      <!-- File info badge once uploaded -->
+      <div id="fileInfoBox" class="file-info-box">
+        <div class="file-details">
+          <span class="file-icon">📄</span>
+          <div>
+            <div id="fileName" class="file-name">filename.ext</div>
+            <div id="fileMeta" class="file-meta">0 B • text/plain</div>
+          </div>
+        </div>
+        <button id="btnRemoveFile" class="btn-remove" title="Remove file">✕</button>
+      </div>
+
+      <!-- Quick sample file generator -->
+      <div class="samples-bar">
+        <span class="samples-label">Quick Test Samples:</span>
+        <button id="btnSampleText" class="btn-sample" type="button">📝 Repetitive Text (~100 KB)</button>
+        <button id="btnSampleJson" class="btn-sample" type="button">📊 JSON Logs (~500 KB)</button>
+        <button id="btnSampleBinary" class="btn-sample" type="button">⚙️ Binary Pattern (~512 KB)</button>
+      </div>
+
+      <!-- Compression Options -->
+      <div id="compressOptions" class="options-panel">
+        <div class="controls-grid">
+          <div class="form-group">
+            <label for="selectAlgo">Compression Algorithm</label>
+            <select id="selectAlgo"></select>
+            <span id="algoDesc" class="file-meta"></span>
+          </div>
+
+          <div class="form-group">
+            <label for="rangeLevel">Compression Level</label>
+            <div class="range-wrap">
+              <input type="range" id="rangeLevel" min="1" max="19" value="3">
+              <span id="levelVal" class="range-val">3</span>
+            </div>
+            <label class="checkbox-wrap">
+              <input type="checkbox" id="chkHeader" checked>
+              <span>Include Container Header (Auto-detectable & CRC32 Verified)</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Decompression Options -->
+      <div id="decompressOptions" class="options-panel" style="display: none;">
+        <div class="controls-grid">
+          <div class="form-group">
+            <label for="selectDecompAlgo">Algorithm Format</label>
+            <select id="selectDecompAlgo">
+              <option value="auto" selected>Auto-detect format (Recommended)</option>
+              <option value="zstd">Zstandard (.zst)</option>
+              <option value="zlib">Zlib / Gzip (.gz, .zlib)</option>
+              <option value="lz4">LZ4 (.lz4)</option>
+              <option value="rle">Run-Length Encoding (.rle)</option>
+            </select>
+            <span id="detectedFormatBadge" class="file-meta">Auto-detecting...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Benchmark Options -->
+      <div id="benchmarkOptions" class="options-panel" style="display: none;">
+        <p class="file-meta" style="margin-bottom: 1rem;">
+          Run all 4 compression algorithms (Zstandard, Zlib, LZ4, RLE) consecutively on the selected file to compare compression ratios, file sizes, and processing speeds side-by-side.
+        </p>
+      </div>
+
+      <!-- Actions -->
+      <div class="action-row">
+        <button id="btnAction" class="btn-primary" disabled>
+          <span id="spinner" class="spinner"></span>
+          <span id="btnActionText">Compress File</span>
+        </button>
+        <button id="btnReset" class="btn-secondary" type="button">Reset</button>
+      </div>
+
+      <!-- Stats Section -->
+      <div id="statsSection" class="stats-section">
+        <div class="stats-title">
+          <span>Processing Statistics</span>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">Original Size</span>
+            <span id="statOrigSize" class="stat-value">0 B</span>
+            <span id="statOrigBytes" class="stat-sub">0 bytes</span>
+          </div>
+
+          <div class="stat-card">
+            <span class="stat-label">Output Size</span>
+            <span id="statOutSize" class="stat-value">0 B</span>
+            <span id="statOutBytes" class="stat-sub">0 bytes</span>
+          </div>
+
+          <div class="stat-card">
+            <span class="stat-label">Compression Ratio</span>
+            <span id="statRatio" class="stat-value">1.00x</span>
+            <span id="statSavings" class="stat-sub">0.0% smaller</span>
+          </div>
+
+          <div class="stat-card">
+            <span class="stat-label">Duration & Speed</span>
+            <span id="statDuration" class="stat-value">0.0 ms</span>
+            <span id="statSpeed" class="stat-sub">0.0 MB/s</span>
+          </div>
+        </div>
+
+        <div class="ratio-bar-wrap" title="Compressed Size vs Original Size">
+          <div id="ratioBarFilled" class="ratio-bar-filled" style="width: 100%;"></div>
+        </div>
+
+        <!-- Download Card -->
+        <div id="downloadCard" class="download-card">
+          <div class="download-info">
+            <span class="stat-label">Processed Output</span>
+            <span id="downloadFilename" class="download-filename">output.bin</span>
+          </div>
+          <button id="btnDownload" class="btn-download" type="button">
+            <span>💾</span> Download Result
+          </button>
+        </div>
+      </div>
+
+      <!-- Benchmark Table -->
+      <div id="benchmarkSection" style="display: none; margin-top: 1.5rem;">
+        <div class="stats-title">
+          <span>Algorithm Comparison Results</span>
+        </div>
+        <div class="benchmark-table-wrap">
+          <table class="benchmark-table">
+            <thead>
+              <tr>
+                <th>Algorithm</th>
+                <th>Compressed Size</th>
+                <th>Space Saved</th>
+                <th>Compress Time</th>
+                <th>Throughput</th>
+                <th>Decompress Time</th>
+              </tr>
+            </thead>
+            <tbody id="benchmarkTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <p>Built with <a href="https://emscripten.org" target="_blank" rel="noopener">Emscripten</a>, WebAssembly, and modern C++ • Open Source Compression Engine</p>
+    </footer>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

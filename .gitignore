@@ -2,3 +2,6 @@
 __pycache__/
 *.py[cod]
 *$py.class
+
+results/**/*.o
+results/**/node_modules
