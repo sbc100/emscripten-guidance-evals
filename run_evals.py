@@ -532,7 +532,7 @@ def evaluate_tests(tests: list[str]) -> None:
 ## Executive Summary
 - **Unguided Score:** {unguided_score} / 100
 - **Guided Score:** {guided_score} / 100
-- **Uplift (+pp):** +{uplift} points
+- **Uplift (+pp):** {uplift:+d} points
 
 ## Detailed Notes
 ### Unguided Run
@@ -588,7 +588,7 @@ def generate_summary_metrics() -> None:
             f"| :{(name_w - 1)*'-'} | :{12*'-'}: | :{10*'-'}: | :{10*'-'}: |"
         )
         formatted_rows = [
-            f"| {t:<{name_w}} | {u!s:^14} | {g!s:^12} | {f'+{up}':^12} |"
+            f"| {t:<{name_w}} | {u!s:^14} | {g!s:^12} | {f'{up:+d}':^12} |"
             for t, u, g, up in summary_rows
         ]
         summary_file = RESULTS_DIR / "summary_metrics.md"
