@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Automated evaluation harness for benchmarking AI coding agents on Emscripten.
 
-This script sets up isolated git repositories for each evaluation test case,
+This script sets up workspaces for each evaluation test case,
 runs agents with and without access to Emscripten guidance (best practices),
 verifies build outcomes, and evaluates the generated solutions.
 """
@@ -49,20 +49,6 @@ def setup_tests(tests: list[str]) -> None:
             if workspace.exists():
                 shutil.rmtree(workspace)
             workspace.mkdir(parents=True, exist_ok=True)
-
-            # Initialize a fresh git repository in the workspace
-            subprocess.run(
-                ["git", "init", "-q"],
-                cwd=workspace,
-                check=True,
-            )
-
-            # Create a basic .gitignore
-            gitignore_path = workspace / ".gitignore"
-            gitignore_path.write_text(
-                "*.o\n*.wasm\n*.mjs\n*.mjs.map\nbuild.log\n",
-                encoding="utf-8",
-            )
 
             # Copy prompt into workspace
             (workspace / "prompt.md").write_text(prompt_text, encoding="utf-8")

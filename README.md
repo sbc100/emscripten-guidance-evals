@@ -44,7 +44,7 @@ and evaluate results) across all tests in one command:
 
 #### 1. Set Up Test Workspaces
 
-To initialize clean git repositories (`unguided` and `guided`) for all test
+To initialize clean workspaces (`unguided` and `guided`) for all test
 cases and populate them with prompts and local guidance documentation:
 
 ```bash
