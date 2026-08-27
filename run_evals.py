@@ -87,7 +87,7 @@ def resolve_results_dir(
 
 
 def generate_index_html(results_dir: Path) -> None:
-    """Generate an index.html navigation page for a results directory."""
+    """Generate an index.html navigation and summary page for a results directory."""
     tests = get_all_tests()
     rows = []
     for test in tests:
@@ -97,35 +97,84 @@ def generate_index_html(results_dir: Path) -> None:
         unguided_log = results_dir / test / "unguided" / "run.log"
         report_md = results_dir / test / "evaluation_report.md"
 
+        unguided_score_str = ""
+        guided_score_str = ""
+        uplift_str = ""
+
+        if report_md.exists():
+            full_text = report_md.read_text(encoding="utf-8")
+            m_u = re.search(
+                r"\b(?:Unguided Score|Unguided Total)[\s\*:]+(\d+)\s*(?:/\s*100)?",
+                full_text,
+                re.IGNORECASE,
+            )
+            m_g = re.search(
+                r"\b(?:Guided Score|Guided Total)[\s\*:]+(\d+)\s*(?:/\s*100)?",
+                full_text,
+                re.IGNORECASE,
+            )
+            if m_u and m_g:
+                u_score = int(m_u.group(1))
+                g_score = int(m_g.group(1))
+                diff = g_score - u_score
+                unguided_score_str = f"{u_score}/100"
+                guided_score_str = f"{g_score}/100"
+                color = (
+                    "#1a7f37"
+                    if diff > 0
+                    else ("#cf222e" if diff < 0 else "#57606a")
+                )
+                uplift_str = (
+                    f'<span style="color: {color}; font-weight: 600;">'
+                    f"{diff:+d}</span>"
+                )
+
         guided_parts = []
         if guided_html.exists():
-            guided_parts.append(f'<a href="{test}/guided/index.html">Guided</a>')
+            guided_parts.append(
+                f'<a href="{test}/guided/index.html"><strong>Demo App</strong></a>'
+            )
         if guided_log.exists():
             guided_parts.append(f'<a href="{test}/guided/run.log">log</a>')
-        guided_link = " | ".join(guided_parts) if guided_parts else "Guided"
+        guided_cell = " | ".join(guided_parts) if guided_parts else "N/A"
+        if guided_score_str:
+            guided_cell += (
+                f'<br><span style="font-size: 0.9em; color: #57606a;">'
+                f"Score: {guided_score_str}</span>"
+            )
 
         unguided_parts = []
         if unguided_html.exists():
-            unguided_parts.append(f'<a href="{test}/unguided/index.html">Unguided</a>')
+            unguided_parts.append(
+                f'<a href="{test}/unguided/index.html"><strong>Demo App</strong></a>'
+            )
         if unguided_log.exists():
             unguided_parts.append(f'<a href="{test}/unguided/run.log">log</a>')
-        unguided_link = " | ".join(unguided_parts) if unguided_parts else "Unguided"
+        unguided_cell = " | ".join(unguided_parts) if unguided_parts else "N/A"
+        if unguided_score_str:
+            unguided_cell += (
+                f'<br><span style="font-size: 0.9em; color: #57606a;">'
+                f"Score: {unguided_score_str}</span>"
+            )
 
-        report_link = (
-            f'<a href="{test}/evaluation_report.md">Report</a>'
+        report_cell = (
+            f'<a href="{test}/evaluation_report.md"><strong>Report</strong></a>'
             if report_md.exists()
-            else "Report"
+            else "N/A"
         )
+
         rows.append(
             f"      <tr>\n"
-            f"        <td>{test}</td>\n"
-            f"        <td>{guided_link}</td>\n"
-            f"        <td>{unguided_link}</td>\n"
-            f"        <td>{report_link}</td>\n"
+            f"        <td><strong>{test}</strong></td>\n"
+            f"        <td>{guided_cell}</td>\n"
+            f"        <td>{unguided_cell}</td>\n"
+            f'        <td style="text-align: center;">{uplift_str or "N/A"}</td>\n'
+            f"        <td>{report_cell}</td>\n"
             f"      </tr>"
         )
 
     tbody = "\n".join(rows)
+    index_file = results_dir / "index.html"
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -135,7 +184,7 @@ def generate_index_html(results_dir: Path) -> None:
   <style>
     body {{
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      max-width: 800px;
+      max-width: 900px;
       margin: 2rem auto;
       padding: 0 1rem;
       line-height: 1.5;
@@ -156,8 +205,16 @@ def generate_index_html(results_dir: Path) -> None:
       a {{
         color: #58a6ff;
       }}
+      .links-bar {{
+        background-color: #161b22 !important;
+        border-color: #30363d !important;
+      }}
     }}
     h1 {{
+      margin-bottom: 0.25rem;
+    }}
+    .subtitle {{
+      color: #57606a;
       margin-bottom: 1.5rem;
     }}
     table {{
@@ -167,8 +224,9 @@ def generate_index_html(results_dir: Path) -> None:
     }}
     th, td {{
       border: 1px solid #d0d7de;
-      padding: 8px 12px;
+      padding: 10px 14px;
       text-align: left;
+      vertical-align: middle;
     }}
     th {{
       background-color: #f6f8fa;
@@ -180,16 +238,25 @@ def generate_index_html(results_dir: Path) -> None:
     a:hover {{
       text-decoration: underline;
     }}
+    .links-bar {{
+      margin-top: 1.5rem;
+      padding: 12px 16px;
+      background: #f6f8fa;
+      border-radius: 6px;
+      border: 1px solid #d0d7de;
+    }}
   </style>
 </head>
 <body>
   <h1>Emscripten Guidance Evaluation Results ({results_dir.name})</h1>
+  <div class="subtitle">AI Coding Agent Benchmark & Best Practices Uplift</div>
   <table>
     <thead>
       <tr>
         <th>Test Case</th>
-        <th>Guided</th>
-        <th>Unguided</th>
+        <th>Guided Solution</th>
+        <th>Unguided Solution</th>
+        <th style="text-align: center;">Uplift</th>
         <th>Report</th>
       </tr>
     </thead>
@@ -197,10 +264,14 @@ def generate_index_html(results_dir: Path) -> None:
 {tbody}
     </tbody>
   </table>
+  <div class="links-bar">
+    <a href="summary_metrics.md"><strong>View summary_metrics.md</strong></a>
+  </div>
 </body>
 </html>
 """
-    (results_dir / "index.html").write_text(html_content, encoding="utf-8")
+    index_file.write_text(html_content, encoding="utf-8")
+    print(f"Wrote browseable index: {index_file}")
 
 
 def prepare_workspace(test: str, mode: str, target_dir: Path) -> str:
@@ -1321,6 +1392,8 @@ def generate_summary_metrics(results_dir: Path) -> None:
         )
         summary_file.write_text(summary_md, encoding="utf-8")
         print(f"\nWrote summary metrics: {summary_file}")
+
+    generate_index_html(results_dir)
 
 
 def print_status(results_dir: Path | None = None) -> None:
