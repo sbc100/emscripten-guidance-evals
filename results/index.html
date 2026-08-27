@@ -5,319 +5,92 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Emscripten Guidance Evaluation Results</title>
   <style>
-    :root {
-      --bg: #0f141c;
-      --card-bg: #18202c;
-      --card-border: #263445;
-      --text: #f0f6fc;
-      --text-muted: #8b949e;
-      --accent: #58a6ff;
-      --accent-hover: #79c0ff;
-      --guided-color: #3fb950;
-      --unguided-color: #d29922;
-      --btn-bg: #212c3d;
-      --btn-border: #303e50;
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background-color: var(--bg);
-      color: var(--text);
-      line-height: 1.6;
-      padding: 2rem 1rem;
-      min-height: 100vh;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      line-height: 1.5;
+      color: #24292f;
     }
-
-    .container {
-      max-width: 960px;
-      margin: 0 auto;
+    @media (prefers-color-scheme: dark) {
+      body {
+        background-color: #0d1117;
+        color: #c9d1d9;
+      }
+      table th {
+        background-color: #161b22;
+        border-color: #30363d;
+      }
+      table td {
+        border-color: #30363d;
+      }
+      a {
+        color: #58a6ff;
+      }
     }
-
-    header {
-      margin-bottom: 2rem;
-      border-bottom: 1px solid var(--card-border);
-      padding-bottom: 1.5rem;
-    }
-
     h1 {
-      font-size: 2rem;
-      font-weight: 700;
-      margin-bottom: 0.5rem;
+      margin-bottom: 1.5rem;
     }
-
-    p.subtitle {
-      color: var(--text-muted);
-      font-size: 1.05rem;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-      gap: 1.5rem;
-      margin-bottom: 2rem;
-    }
-
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
-      padding: 1.5rem;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-
-    .card h2 {
-      font-size: 1.3rem;
-      margin-bottom: 0.4rem;
-      color: var(--text);
-    }
-
-    .card p.desc {
-      color: var(--text-muted);
-      font-size: 0.95rem;
-      margin-bottom: 1.2rem;
-    }
-
-    .scores {
-      display: flex;
-      gap: 1rem;
-      margin-bottom: 1.2rem;
-      font-size: 0.9rem;
-    }
-
-    .score-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      padding: 0.25rem 0.6rem;
-      border-radius: 4px;
-      background: var(--btn-bg);
-      border: 1px solid var(--btn-border);
-    }
-
-    .score-badge.guided {
-      color: var(--guided-color);
-      border-color: rgba(63, 185, 80, 0.4);
-    }
-
-    .score-badge.unguided {
-      color: var(--unguided-color);
-      border-color: rgba(210, 153, 34, 0.4);
-    }
-
-    .links {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.75rem;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      padding: 0.6rem 1rem;
-      border-radius: 6px;
-      font-size: 0.95rem;
-      font-weight: 500;
-      text-decoration: none;
-      transition: background-color 0.15s ease, border-color 0.15s ease;
-      background: var(--btn-bg);
-      border: 1px solid var(--btn-border);
-      color: var(--text);
-    }
-
-    .btn:hover {
-      background: #2a374c;
-      border-color: var(--accent);
-      color: var(--accent-hover);
-    }
-
-    .btn.primary {
-      background: #1f6feb22;
-      border-color: #1f6feb66;
-      color: var(--accent-hover);
-    }
-
-    .btn.primary:hover {
-      background: #1f6feb44;
-      border-color: var(--accent);
-    }
-
-    .btn.report {
-      font-size: 0.85rem;
-      padding: 0.6rem 0.8rem;
-      color: var(--text-muted);
-    }
-
-    .btn.report:hover {
-      color: var(--text);
-    }
-
-    table.summary-table {
+    table {
       width: 100%;
       border-collapse: collapse;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
-      overflow: hidden;
-      margin-top: 1.5rem;
+      margin-top: 1rem;
     }
-
-    table.summary-table th,
-    table.summary-table td {
-      padding: 0.75rem 1rem;
+    th, td {
+      border: 1px solid #d0d7de;
+      padding: 8px 12px;
       text-align: left;
-      border-bottom: 1px solid var(--card-border);
     }
-
-    table.summary-table th {
-      background: #131b26;
-      font-weight: 600;
-      color: var(--text-muted);
-      font-size: 0.9rem;
+    th {
+      background-color: #f6f8fa;
     }
-
-    table.summary-table tr:last-child td {
-      border-bottom: none;
+    a {
+      color: #0969da;
+      text-decoration: none;
     }
-
-    table.summary-table td.center {
-      text-align: center;
-    }
-
-    .positive {
-      color: var(--guided-color);
-      font-weight: 600;
+    a:hover {
+      text-decoration: underline;
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>Emscripten Guidance Evaluation Results</h1>
-      <p class="subtitle">Interactive web application builds evaluated with and without Emscripten AI guidance.</p>
-    </header>
-
-    <div class="grid">
-      <!-- Audio Processor -->
-      <div class="card">
-        <div>
-          <h2>Audio Processor</h2>
-          <p class="desc">WebAssembly tone synthesizer &amp; real-time audio waveform processing engine.</p>
-          <div class="scores">
-            <span class="score-badge guided">Guided: 100/100</span>
-            <span class="score-badge unguided">Unguided: 44/100</span>
-            <span class="score-badge positive">+56 pp</span>
-          </div>
-        </div>
-        <div class="links">
-          <a class="btn primary" href="audio-processor/guided/index.html">Guided Demo</a>
-          <a class="btn" href="audio-processor/unguided/index.html">Unguided Demo</a>
-          <a class="btn report" href="audio-processor/evaluation_report.md">Report</a>
-        </div>
-      </div>
-
-      <!-- File Compressor -->
-      <div class="card">
-        <div>
-          <h2>File Compressor</h2>
-          <p class="desc">Client-side compression and decompression using Zstandard, Zlib, and LZ4.</p>
-          <div class="scores">
-            <span class="score-badge guided">Guided: 100/100</span>
-            <span class="score-badge unguided">Unguided: 54/100</span>
-            <span class="score-badge positive">+46 pp</span>
-          </div>
-        </div>
-        <div class="links">
-          <a class="btn primary" href="file-compressor/guided/index.html">Guided Demo</a>
-          <a class="btn" href="file-compressor/unguided/index.html">Unguided Demo</a>
-          <a class="btn report" href="file-compressor/evaluation_report.md">Report</a>
-        </div>
-      </div>
-
-      <!-- Fractal Flames -->
-      <div class="card">
-        <div>
-          <h2>Fractal Flames</h2>
-          <p class="desc">Interactive cosmic flame fractal renderer ported from the flam3 C library.</p>
-          <div class="scores">
-            <span class="score-badge guided">Guided: 95/100</span>
-            <span class="score-badge unguided">Unguided: 100/100</span>
-            <span class="score-badge">-5 pp</span>
-          </div>
-        </div>
-        <div class="links">
-          <a class="btn primary" href="fractal-flames/guided/index.html">Guided Demo</a>
-          <a class="btn" href="fractal-flames/unguided/index.html">Unguided Demo</a>
-          <a class="btn report" href="fractal-flames/evaluation_report.md">Report</a>
-        </div>
-      </div>
-
-      <!-- Image Transcoder -->
-      <div class="card">
-        <div>
-          <h2>Image Transcoder</h2>
-          <p class="desc">Image format transcoding and digital filters (JPEG, PNG, WebP, QOI).</p>
-          <div class="scores">
-            <span class="score-badge guided">Guided: 100/100</span>
-            <span class="score-badge unguided">Unguided: 44/100</span>
-            <span class="score-badge positive">+56 pp</span>
-          </div>
-        </div>
-        <div class="links">
-          <a class="btn primary" href="image-transcoder/guided/index.html">Guided Demo</a>
-          <a class="btn" href="image-transcoder/unguided/index.html">Unguided Demo</a>
-          <a class="btn report" href="image-transcoder/evaluation_report.md">Report</a>
-        </div>
-      </div>
-    </div>
-
-    <section>
-      <h2>Summary Metrics</h2>
-      <table class="summary-table">
-        <thead>
-          <tr>
-            <th>Test Case</th>
-            <th class="center">Unguided Score</th>
-            <th class="center">Guided Score</th>
-            <th class="center">Uplift</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><a href="audio-processor/guided/index.html" style="color: var(--accent);">audio-processor</a></td>
-            <td class="center">44 / 100</td>
-            <td class="center">100 / 100</td>
-            <td class="center positive">+56 pp</td>
-          </tr>
-          <tr>
-            <td><a href="file-compressor/guided/index.html" style="color: var(--accent);">file-compressor</a></td>
-            <td class="center">54 / 100</td>
-            <td class="center">100 / 100</td>
-            <td class="center positive">+46 pp</td>
-          </tr>
-          <tr>
-            <td><a href="fractal-flames/guided/index.html" style="color: var(--accent);">fractal-flames</a></td>
-            <td class="center">100 / 100</td>
-            <td class="center">95 / 100</td>
-            <td class="center">-5 pp</td>
-          </tr>
-          <tr>
-            <td><a href="image-transcoder/guided/index.html" style="color: var(--accent);">image-transcoder</a></td>
-            <td class="center">44 / 100</td>
-            <td class="center">100 / 100</td>
-            <td class="center positive">+56 pp</td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-  </div>
+  <h1>Emscripten Guidance Evaluation Results</h1>
+  <table>
+    <thead>
+      <tr>
+        <th>Test Case</th>
+        <th>Guided</th>
+        <th>Unguided</th>
+        <th>Report</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>audio-processor</td>
+        <td><a href="audio-processor/guided/index.html">Guided</a></td>
+        <td><a href="audio-processor/unguided/index.html">Unguided</a></td>
+        <td><a href="audio-processor/evaluation_report.md">Report</a></td>
+      </tr>
+      <tr>
+        <td>file-compressor</td>
+        <td><a href="file-compressor/guided/index.html">Guided</a></td>
+        <td><a href="file-compressor/unguided/index.html">Unguided</a></td>
+        <td><a href="file-compressor/evaluation_report.md">Report</a></td>
+      </tr>
+      <tr>
+        <td>fractal-flames</td>
+        <td><a href="fractal-flames/guided/index.html">Guided</a></td>
+        <td><a href="fractal-flames/unguided/index.html">Unguided</a></td>
+        <td><a href="fractal-flames/evaluation_report.md">Report</a></td>
+      </tr>
+      <tr>
+        <td>image-transcoder</td>
+        <td><a href="image-transcoder/guided/index.html">Guided</a></td>
+        <td><a href="image-transcoder/unguided/index.html">Unguided</a></td>
+        <td><a href="image-transcoder/evaluation_report.md">Report</a></td>
+      </tr>
+    </tbody>
+  </table>
 </body>
 </html>

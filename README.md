@@ -85,7 +85,9 @@ Run `make clean all` inside each generated workspace to verify whether the agent
 
 ### 4. Evaluate Solutions & Generate Metrics
 
-Evaluate the generated `Makefile`, C++ code, and HTML/JS frontend against the 4 best practice categories (Compilation Flags, Separate Compilation, Embind Interop, and Modern Web Standards):
+Evaluate the generated `Makefile`, C++ code, and HTML/JS frontend against the
+4 evaluation categories (Basic Functionality & Testing, Compilation Flags,
+Separate Compilation, and JS & C++ Interoperability):
 
 ```bash
 ./run_evals.py evaluate
@@ -113,7 +115,7 @@ across all test cases:
 
 ## Evaluation Rubric Categories (100 Points Total)
 
-1. **Compilation Flags & Best Practices (25 pts)**: Opting into `-sSTRICT`, `-sEXPORT_ES6`, and `-Werror -Wall`. Avoiding legacy `=1` boolean suffixes and `-sWASM=1` defaults.
-2. **Separate Compilation Workflow (25 pts)**: Separating object file compilation (`-c`) from the final link step, ensuring optimization flags (`-flto`, `-O3`/`-Oz`) are applied consistently across both.
-3. **JS & C++ Interoperability (25 pts)**: Using Embind (`--bind`) to cleanly exchange complex data structures (`std::vector<uint8_t>`, strings, audio/image buffers) without raw `extern "C"` pointer casting.
-4. **Modern Web Standards (25 pts)**: Loading generated modules cleanly via ES6 `import Module from './module.mjs'`, yielding to the main thread, and fulfilling all functional requirements.
+1. **Basic Functionality & Testing (25 pts)**: Verifying that the web application actually works, passes simple direct input/output/results testing without runtime errors (e.g. using Chrome headless or Puppeteer), and satisfies core functional requirements.
+2. **Compilation Flags & Best Practices (25 pts)**: Opting into `-sSTRICT`, `-sEXPORT_ES6`, and `-Werror -Wall`. Avoiding legacy `=1` boolean suffixes and `-sWASM=1` defaults.
+3. **Separate Compilation Workflow (25 pts)**: Separating object file compilation (`-c`) from the final link step, ensuring optimization flags (`-flto`, `-O3`/`-Oz`) are applied consistently across both.
+4. **JS & C++ Interoperability (25 pts)**: Using Embind (`--bind`) to cleanly exchange complex data structures (`std::vector<uint8_t>`, strings, audio/image buffers) without raw `extern "C"` pointer casting, and loading modules via ES6 `import`.

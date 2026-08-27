@@ -1,38 +1,72 @@
 # Evaluation Prompt for Emscripten AI Agent Benchmarks
 
-You are an expert Emscripten and C++ WebAssembly code reviewer evaluating an AI coding agent's submission.
+You are an expert Emscripten and C++ WebAssembly code reviewer evaluating an
+AI coding agent's submission.
 
-You have access to the official Emscripten Best Practices documentation (`guidance/best_practices.rst` and `guidance/best_practices.md`) as well as the specific evaluation rubric for this test (`evaluation_criteria.md`).
+You have access to the official Emscripten Best Practices documentation
+(`guidance/best_practices.rst` and `guidance/best_practices.md`).
 
 ## Task
 
-Evaluate the AI agent's generated code (including the `Makefile`, C++ source files like `main.cpp` or `.cpp` modules, HTML/JS frontend like `index.html` or `module.mjs`) located in the target workspace.
+Evaluate the AI agent's generated code (including the `Makefile`, C++ source
+files like `main.cpp` or `.cpp` modules, HTML/JS frontend like `index.html` or
+`module.mjs`) located in the target workspace.
 
-For both the **unguided** run (`results/<test_name>/unguided`) and the **guided** run (`results/<test_name>/guided`), inspect the generated files and score them on the following 4 categories (25 points each, total 100 points per run):
+For both the **unguided** run (`results/<test_name>/unguided`) and the
+**guided** run (`results/<test_name>/guided`), inspect and test the generated
+files and score them on the following 4 categories (25 points each, total 100
+points per run):
 
-### Category 1: Compilation Flags & Best Practices Compliance (0 - 25 points)
+### Category 1: Basic Functionality & Testing (0 - 25 points)
+- **Does the web application actually work?** Does it load and run in the
+  browser / Node.js environment without runtime errors or crashes?
+- **Actual testing of inputs/outputs/results:** Perform simple direct testing
+  of the application's core functionality with realistic test inputs (you can
+  use Chrome headless or Puppeteer to launch the browser and run tests):
+  - Feed sample inputs (e.g. data buffers, audio parameters, sample images, or
+    test payloads) and verify that valid, non-trivial, and correct output results
+    are produced.
+  - Verify that edge cases or typical user actions (e.g. clicking buttons,
+    adjusting sliders, uploading files, running processing passes) execute
+    without JavaScript console errors or WebAssembly runtime traps.
+  - Run any included automated verification / test scripts, or use Chrome
+    headless / Puppeteer to drive and inspect the web application in a browser
+    session.
+- **Requirements fulfillment:** Does the implementation satisfy all functional
+  requirements outlined in the test prompt?
+
+### Category 2: Compilation Flags & Best Practices Compliance (0 - 25 points)
 - Does `Makefile` use `-sSTRICT` (without `=1` suffix)?
 - Does `Makefile` use `-sEXPORT_ES6` (without `=1` suffix)?
 - Does `Makefile` include `-Werror -Wall`?
-- Are standard compiler flags used (e.g., `-pthread` over `-sUSE_PTHREADS`, `-m64` over `-sMEMORY64`)?
+- Are standard compiler flags used (e.g., `-pthread` over `-sUSE_PTHREADS`,
+  `-m64` over `-sMEMORY64`)?
 - Are redundant default settings omitted (e.g., no `-sWASM=1`)?
-- Are list-based settings formatted as simple comma-separated lists (`-sEXPORTED_FUNCTIONS=main,malloc`) rather than JSON syntax (`-sEXPORTED_FUNCTIONS=['_main','_malloc']`)?
-- Are boolean flags cleanly specified without `=1` suffix (`-sALLOW_MEMORY_GROWTH`, `-sSTRICT`)?
+- Are list-based settings formatted as simple comma-separated lists
+  (`-sEXPORTED_FUNCTIONS=_main,_malloc`) rather than JSON syntax
+  (`-sEXPORTED_FUNCTIONS=['_main','_malloc']`)?
+- Are boolean flags cleanly specified without `=1` suffix
+  (`-sALLOW_MEMORY_GROWTH`, `-sSTRICT`)?
 
-### Category 2: Separate Compilation Workflow (0 - 25 points)
-- Does `Makefile` cleanly separate compilation (`.cpp` -> `.o`) from linking (`.o` -> `.mjs`)?
-- Are critical flags (such as `-flto`, `-O3`/`-Oz`, `-g`, `-pthread`, `-Werror -Wall`) passed at **both** compile time and link time?
-- Does `make clean` properly clean target artifacts including `.o`, `.mjs`, `.wasm`, and `.map` files?
+### Category 3: Separate Compilation Workflow (0 - 25 points)
+- Does `Makefile` cleanly separate compilation (`.cpp` -> `.o`) from linking
+  (`.o` -> `.mjs`)?
+- Are critical flags (such as `-flto`, `-O3`/`-Oz`, `-g`, `-pthread`,
+  `-Werror -Wall`) passed at **both** compile time and link time?
+- Does `make clean` properly clean target artifacts including `.o`, `.mjs`,
+  `.wasm`, and `.map` files?
 
-### Category 3: JavaScript & C++ Interoperability (0 - 25 points)
-- Is **Embind** (`--bind` and `EMSCRIPTEN_BINDINGS`) used instead of raw `extern "C"` pointer casting?
-- Are complex/binary data structures (`std::vector<uint8_t>`, `std::string`, `std::vector<float>`, smart pointers, classes) cleanly exposed and accessed from JavaScript (`Uint8Array`, `Float32Array`, `string`) without manual unsafe memory offsets or potential memory leaks?
-
-### Category 4: Modern Web Standards & Application Functionality (0 - 25 points)
-- Is the WebAssembly module loaded using modern ES6 `import` syntax (`import Module from './module.mjs'`)?
-- Does the frontend cleanly initialize the module (`const instance = await Module()`) and catch loading errors?
+### Category 4: JavaScript & C++ Interoperability (0 - 25 points)
+- Is **Embind** (`--bind` and `EMSCRIPTEN_BINDINGS`) used instead of raw
+  `extern "C"` pointer casting?
+- Are complex/binary data structures (`std::vector<uint8_t>`, `std::string`,
+  `std::vector<float>`, smart pointers, classes) cleanly exposed and accessed
+  from JavaScript (`Uint8Array`, `Float32Array`, `string`) without manual
+  unsafe memory offsets or potential memory leaks?
+- Is the WebAssembly module loaded using modern ES6 `import` syntax
+  (`import Module from './module.mjs'`) and initialized cleanly
+  (`const instance = await Module()`)?
 - Does the C++ code avoid long synchronous blocking loops on the main UI thread?
-- Does the overall application fulfill all functional requirements specified in the test prompt?
 
 ---
 
@@ -52,17 +86,17 @@ Generate a Markdown evaluation report with the following structure:
 
 | Category | Unguided Score | Guided Score | Key Differences |
 | :--- | :--- | :--- | :--- |
-| 1. Compilation Flags & Best Practices | X / 25 | Y / 25 | ... |
-| 2. Separate Compilation Workflow | X / 25 | Y / 25 | ... |
-| 3. JS & C++ Interoperability (Embind) | X / 25 | Y / 25 | ... |
-| 4. Modern Web Standards & Functionality | X / 25 | Y / 25 | ... |
+| 1. Basic Functionality & Testing | X / 25 | Y / 25 | ... |
+| 2. Compilation Flags & Best Practices | X / 25 | Y / 25 | ... |
+| 3. Separate Compilation Workflow | X / 25 | Y / 25 | ... |
+| 4. JS & C++ Interoperability | X / 25 | Y / 25 | ... |
 | **Total Score** | **X / 100** | **Y / 100** | |
 
 ## Analysis of Unguided Run
-<Detailed critique explaining deductions, exact flags used or missed, interop patterns used, and whether separate compilation was performed.>
+<Detailed critique covering functionality and testing results, deductions, exact flags used or missed, interop patterns used, and whether separate compilation was performed.>
 
 ## Analysis of Guided Run
-<Detailed critique explaining compliance with best_practices.rst, improvements seen, exact flags used, and whether separate compilation and Embind were properly applied.>
+<Detailed critique covering functionality and testing results, compliance with best_practices.rst, improvements seen, exact flags used, and whether separate compilation and Embind were properly applied.>
 
 ## Recommendations & Takeaways
 <Actionable notes on how the guidance impacted model performance and specific areas where the model needed redirection.>

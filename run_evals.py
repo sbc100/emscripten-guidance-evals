@@ -454,14 +454,6 @@ def build_workspaces(tests: list[str]) -> None:
 def evaluate_tests(tests: list[str]) -> None:
     """Evaluate and grade the generated solutions against best practices."""
     for test in tests:
-        test_dir = TESTS_DIR / test
-        criteria_file = test_dir / "evaluation_criteria.md"
-        _ = (
-            criteria_file.read_text(encoding="utf-8")
-            if criteria_file.exists()
-            else ""
-        )
-
         scores = {}
         analysis_notes = {}
 
@@ -483,45 +475,49 @@ def evaluate_tests(tests: list[str]) -> None:
             score = 0
             notes = []
 
-            # Category 1: Compilation Flags (25 pts)
+            # Category 1: Basic Functionality & Testing (25 pts)
             cat1 = 0
-            if "-sSTRICT" in makefile and "-sSTRICT=1" not in makefile:
-                cat1 += 8
-            if "-sEXPORT_ES6" in makefile and "-sEXPORT_ES6=1" not in makefile:
-                cat1 += 8
-            if "-Werror" in makefile and "-Wall" in makefile:
+            if (workspace / "module.wasm").exists() or list(workspace.glob("*.wasm")):
+                cat1 += 10
+            if (workspace / "index.html").exists() and len((workspace / "index.html").read_text(encoding="utf-8")) > 100:
+                cat1 += 10
+            if (workspace / "module.mjs").exists() or list(workspace.glob("*.mjs")):
                 cat1 += 5
-            if "-sWASM=1" not in makefile and "-sUSE_PTHREADS=1" not in makefile:
-                cat1 += 4
             score += min(cat1, 25)
-            notes.append(f"Compilation Flags: {cat1}/25")
+            notes.append(f"Basic Functionality & Testing: {cat1}/25")
 
-            # Category 2: Separate Compilation (25 pts)
+            # Category 2: Compilation Flags (25 pts)
             cat2 = 0
-            if "-c " in makefile and ("%.o: %.cpp" in makefile or ".o" in makefile):
-                cat2 += 15
-            if "-flto" in makefile or "-O3" in makefile or "-Oz" in makefile:
-                cat2 += 10
+            if "-sSTRICT" in makefile and "-sSTRICT=1" not in makefile:
+                cat2 += 8
+            if "-sEXPORT_ES6" in makefile and "-sEXPORT_ES6=1" not in makefile:
+                cat2 += 8
+            if "-Werror" in makefile and "-Wall" in makefile:
+                cat2 += 5
+            if "-sWASM=1" not in makefile and "-sUSE_PTHREADS=1" not in makefile:
+                cat2 += 4
             score += min(cat2, 25)
-            notes.append(f"Separate Compilation: {cat2}/25")
+            notes.append(f"Compilation Flags: {cat2}/25")
 
-            # Category 3: JS & C++ Interop (Embind) (25 pts)
+            # Category 3: Separate Compilation (25 pts)
             cat3 = 0
-            if "--bind" in makefile and "EMSCRIPTEN_BINDINGS" in cpp:
-                cat3 += 25
-            elif "extern " in cpp or "EXPORTED_FUNCTIONS" in makefile:
-                cat3 += 5
+            if "-c " in makefile and ("%.o: %.cpp" in makefile or ".o" in makefile):
+                cat3 += 15
+            if "-flto" in makefile or "-O3" in makefile or "-Oz" in makefile:
+                cat3 += 10
             score += min(cat3, 25)
-            notes.append(f"JS & C++ Interop: {cat3}/25")
+            notes.append(f"Separate Compilation: {cat3}/25")
 
-            # Category 4: Modern Web Standards (25 pts)
+            # Category 4: JS & C++ Interop (Embind) & Web Standards (25 pts)
             cat4 = 0
-            if "type=\"module\"" in html or "import Module" in html:
+            if "--bind" in makefile and "EMSCRIPTEN_BINDINGS" in cpp:
                 cat4 += 15
-            if "module.mjs" in makefile or "module.mjs" in html:
+            elif "extern " in cpp or "EXPORTED_FUNCTIONS" in makefile:
+                cat4 += 5
+            if "type=\"module\"" in html or "import Module" in html:
                 cat4 += 10
             score += min(cat4, 25)
-            notes.append(f"Modern Web Standards: {cat4}/25")
+            notes.append(f"JS & C++ Interop: {cat4}/25")
 
             scores[mode] = score
             analysis_notes[mode] = "; ".join(notes)
