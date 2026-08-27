@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -91,19 +92,25 @@ def generate_index_html(results_dir: Path) -> None:
     rows = []
     for test in tests:
         guided_html = results_dir / test / "guided" / "index.html"
+        guided_log = results_dir / test / "guided" / "run.log"
         unguided_html = results_dir / test / "unguided" / "index.html"
+        unguided_log = results_dir / test / "unguided" / "run.log"
         report_md = results_dir / test / "evaluation_report.md"
 
-        guided_link = (
-            f'<a href="{test}/guided/index.html">Guided</a>'
-            if guided_html.exists()
-            else "Guided"
-        )
-        unguided_link = (
-            f'<a href="{test}/unguided/index.html">Unguided</a>'
-            if unguided_html.exists()
-            else "Unguided"
-        )
+        guided_parts = []
+        if guided_html.exists():
+            guided_parts.append(f'<a href="{test}/guided/index.html">Guided</a>')
+        if guided_log.exists():
+            guided_parts.append(f'<a href="{test}/guided/run.log">log</a>')
+        guided_link = " | ".join(guided_parts) if guided_parts else "Guided"
+
+        unguided_parts = []
+        if unguided_html.exists():
+            unguided_parts.append(f'<a href="{test}/unguided/index.html">Unguided</a>')
+        if unguided_log.exists():
+            unguided_parts.append(f'<a href="{test}/unguided/run.log">log</a>')
+        unguided_link = " | ".join(unguided_parts) if unguided_parts else "Unguided"
+
         report_link = (
             f'<a href="{test}/evaluation_report.md">Report</a>'
             if report_md.exists()
@@ -409,24 +416,154 @@ def print_timing_summary(
         if test not in tests_seen:
             tests_seen.append(test)
 
-    name_w = max(20, *(len(t) for t in tests_seen))
-    print("\n=== Execution Timing ===")
-    print(
-        f"{'Test Case':<{name_w}} | {'Unguided':<12} | {'Guided':<12} | {'Total':<14}"
-    )
-    print("-" * (name_w + 44))
-
+    rows: list[tuple[str, str, str, str]] = []
     for test in tests_seen:
         u_time = timing_data.get((test, "unguided"))
         g_time = timing_data.get((test, "guided"))
         u_str = format_duration(u_time) if u_time is not None else "N/A"
         g_str = format_duration(g_time) if g_time is not None else "N/A"
-        t_time = (u_time or 0.0) + (g_time or 0.0)
-        t_str = format_duration(t_time)
-        print(f"{test:<{name_w}} | {u_str:<12} | {g_str:<12} | {t_str:<14}")
+        if u_time is not None or g_time is not None:
+            t_time = (u_time or 0.0) + (g_time or 0.0)
+            t_str = format_duration(t_time)
+        else:
+            t_str = "N/A"
+        rows.append((test, u_str, g_str, t_str))
 
-    print("-" * (name_w + 44))
+    headers = ("Test Case", "Unguided", "Guided", "Total")
+    col_widths = [
+        max(len(headers[i]), *(len(row[i]) for row in rows))
+        for i in range(len(headers))
+    ]
+
+    header_line = " | ".join(
+        f"{h:<{w}}" if i < len(headers) - 1 else h
+        for i, (h, w) in enumerate(zip(headers, col_widths, strict=True))
+    )
+    divider = "-" * len(header_line)
+
+    print("\n=== Execution Timing ===")
+    print(header_line)
+    print(divider)
+    for row in rows:
+        line = " | ".join(
+            f"{val:<{w}}" if i < len(row) - 1 else val
+            for i, (val, w) in enumerate(zip(row, col_widths, strict=True))
+        )
+        print(line)
+    print(divider)
     print(f"Total time taken: {format_duration(total_elapsed)}")
+
+
+def summarize_transcript(transcript_path: Path) -> tuple[list[str], str]:
+    """Parse transcript.jsonl and extract high-level tool calls and final LLM response."""
+    steps_summary: list[str] = []
+    final_response: str = ""
+    try:
+        raw = transcript_path.read_text(encoding="utf-8").strip()
+        if not raw:
+            return steps_summary, final_response
+        lines = [json.loads(line) for line in raw.splitlines() if line.strip()]
+        for entry in lines:
+            source = entry.get("source", "")
+            step_type = entry.get("type", "")
+            step_idx = entry.get("step_index", 0)
+            tool_calls = entry.get("tool_calls", [])
+            content = entry.get("content", "")
+
+            if source == "MODEL" and step_type == "PLANNER_RESPONSE":
+                if tool_calls:
+                    for tc in tool_calls:
+                        name = tc.get("name", "tool")
+                        args = tc.get("args", {})
+                        summary = tc.get("toolSummary") or tc.get("toolAction")
+                        detail = ""
+                        if name == "run_command":
+                            cmd = str(args.get("CommandLine", "")).strip("\"'")
+                            detail = f"`{cmd}`"
+                        elif name in ("write_to_file", "replace_file_content"):
+                            tgt = str(args.get("TargetFile", "")).strip("\"'")
+                            tgt_name = Path(tgt).name if tgt else ""
+                            desc = str(
+                                args.get("Instruction")
+                                or args.get("Description")
+                                or ""
+                            ).strip("\"'")
+                            detail = tgt_name + (f" ({desc})" if desc else "")
+                        elif summary:
+                            detail = str(summary).strip("\"'")
+
+                        desc_str = (
+                            f"Step {step_idx:2d}: Tool `{name}`: {detail}"
+                            if detail
+                            else f"Step {step_idx:2d}: Tool `{name}`"
+                        )
+                        steps_summary.append(desc_str)
+                elif content:
+                    final_response = content.strip()
+    except (
+        json.JSONDecodeError,
+        OSError,
+        UnicodeDecodeError,
+        KeyError,
+        IndexError,
+        TypeError,
+    ) as e:
+        steps_summary.append(f"Error parsing transcript: {e}")
+    return steps_summary, final_response
+
+
+def write_run_log(
+    workspace: Path,
+    test: str,
+    mode: str,
+    runner: str,
+    duration: float,
+    start_time: float,
+    end_time: float,
+    captured_output: str = "",
+    transcript_path: Path | None = None,
+) -> None:
+    """Write run.log with timing metadata, high-level LLM activity, and output."""
+    start_dt = datetime.fromtimestamp(
+        start_time, tz=timezone.utc
+    ).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    end_dt = datetime.fromtimestamp(
+        end_time, tz=timezone.utc
+    ).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+
+    sections = [
+        "=" * 80,
+        f"Evaluation Run Log: {test} ({mode})",
+        "=" * 80,
+        f"Runner:         {runner}",
+        f"Execution Time: {format_duration(duration)}",
+        f"DurationSec:    {duration:.2f}",
+        f"Started:        {start_dt}",
+        f"Completed:      {end_dt}",
+        "=" * 80,
+    ]
+
+    steps_summary = []
+    final_response = ""
+    if transcript_path and transcript_path.exists():
+        steps_summary, final_response = summarize_transcript(transcript_path)
+
+    if steps_summary:
+        sections.append("\n=== High-Level LLM Activity ===")
+        sections.extend(steps_summary)
+
+    if final_response:
+        sections.append("\n=== Final LLM Response ===")
+        sections.append(final_response)
+
+    if captured_output and captured_output.strip():
+        sections.append("\n=== Runner Console Output ===")
+        sections.append(captured_output.strip())
+
+    sections.append("")
+    log_content = "\n".join(sections)
+    log_file = workspace / "run.log"
+    log_file.write_text(log_content, encoding="utf-8")
 
 
 def run_agent(
@@ -472,6 +609,9 @@ def run_agent(
 
                 # Prepare test workspace directly in /tmp
                 prompt_content = prepare_workspace(test, mode, temp_workspace)
+
+                captured_lines = []
+                transcript_path = None
 
                 if runner == "print":
                     print(f"Target directory: {workspace}")
@@ -520,6 +660,10 @@ def run_agent(
                         text=True,
                         check=False,
                     )
+                    if res.stdout:
+                        captured_lines.append(res.stdout)
+                    if res.stderr:
+                        captured_lines.append(res.stderr)
 
                     if res.returncode != 0:
                         print(f"Error starting conversation: {res.stderr}")
@@ -554,6 +698,18 @@ def run_agent(
                             timeout_seconds=timeout,
                             temp_home=temp_home,
                         )
+                        cand = (
+                            temp_home
+                            / ".gemini"
+                            / "jetski"
+                            / "brain"
+                            / conversation_id
+                            / ".system_generated"
+                            / "logs"
+                            / "transcript.jsonl"
+                        )
+                        if cand.exists():
+                            transcript_path = cand
                 elif runner in ("jetski-cli", "jetski"):
                     jetski_bin = shutil.which("jetski-cli") or shutil.which(
                         "jetski"
@@ -593,27 +749,75 @@ def run_agent(
                         prompt_content,
                     ]
                     print(f"Executing Jetski CLI in {temp_workspace}...")
-                    subprocess.run(cmd, cwd=temp_workspace, env=env, check=False)
-                elif runner == "gemini":
-                    cmd = ["gemini", "-p", prompt_content]
-                    print(f"Executing gemini CLI in {temp_workspace}")
-                    subprocess.run(cmd, cwd=temp_workspace, env=env, check=False)
-                elif runner == "claude":
-                    cmd = ["claude", "-p", prompt_content]
-                    print(f"Executing claude CLI in {temp_workspace}")
-                    subprocess.run(cmd, cwd=temp_workspace, env=env, check=False)
+                    proc = subprocess.Popen(
+                        cmd,
+                        cwd=temp_workspace,
+                        env=env,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,
+                    )
+                    if proc.stdout:
+                        for line in proc.stdout:
+                            print(line, end="", flush=True)
+                            captured_lines.append(line)
+                    proc.wait()
+
+                    transcripts = list(
+                        temp_home.glob(
+                            ".gemini/jetski/brain/*/.system_generated/logs/transcript.jsonl"
+                        )
+                    )
+                    if transcripts:
+                        transcript_path = max(
+                            transcripts, key=lambda p: p.stat().st_mtime
+                        )
+                elif runner in ("gemini", "claude"):
+                    cmd = [runner, "-p", prompt_content]
+                    print(f"Executing {runner} CLI in {temp_workspace}")
+                    proc = subprocess.Popen(
+                        cmd,
+                        cwd=temp_workspace,
+                        env=env,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,
+                    )
+                    if proc.stdout:
+                        for line in proc.stdout:
+                            print(line, end="", flush=True)
+                            captured_lines.append(line)
+                    proc.wait()
                 elif runner == "mock":
                     print(
                         f"Generating mock baseline solution for {test} ({mode})..."
                     )
                     generate_mock_solution(temp_workspace, mode, test)
+                    captured_lines.append(
+                        f"Generated mock baseline solution for {test} ({mode}).\n"
+                    )
                 else:
                     print(f"Unknown runner: {runner}")
                     continue
 
                 if not async_mode:
-                    duration = time.time() - step_start
+                    end_time = time.time()
+                    duration = end_time - step_start
                     timing_data[(test, mode)] = duration
+                    captured_output = "".join(captured_lines)
+                    write_run_log(
+                        workspace=temp_workspace,
+                        test=test,
+                        mode=mode,
+                        runner=runner,
+                        duration=duration,
+                        start_time=step_start,
+                        end_time=end_time,
+                        captured_output=captured_output,
+                        transcript_path=transcript_path,
+                    )
                     sync_workspace_dir(temp_workspace, workspace)
                     print(
                         f"Finished {test} ({mode}) in {format_duration(duration)} "
@@ -854,6 +1058,24 @@ def evaluate_tests(tests: list[str], results_dir: Path) -> None:
         guided_score = scores.get("guided", 0)
         uplift = guided_score - unguided_score
 
+        # Read execution times from run.log if available
+        unguided_log = results_dir / test / "unguided" / "run.log"
+        guided_log = results_dir / test / "guided" / "run.log"
+        unguided_time = "N/A"
+        guided_time = "N/A"
+
+        if unguided_log.exists():
+            for line in unguided_log.read_text(encoding="utf-8").splitlines():
+                if line.startswith("Execution Time:"):
+                    unguided_time = line.split("Execution Time:")[1].strip()
+                    break
+
+        if guided_log.exists():
+            for line in guided_log.read_text(encoding="utf-8").splitlines():
+                if line.startswith("Execution Time:"):
+                    guided_time = line.split("Execution Time:")[1].strip()
+                    break
+
         report_path = results_dir / test / "evaluation_report.md"
         report_content = f"""# Evaluation Report: {test}
 
@@ -861,14 +1083,18 @@ def evaluate_tests(tests: list[str], results_dir: Path) -> None:
 - **Unguided Score:** {unguided_score} / 100
 - **Guided Score:** {guided_score} / 100
 - **Uplift (+pp):** {uplift:+d} points
+- **Unguided Time:** {unguided_time}
+- **Guided Time:** {guided_time}
 
 ## Detailed Notes
 ### Unguided Run
 - **Score:** {unguided_score}/100
+- **Execution Time:** {unguided_time}
 - **Notes:** {analysis_notes.get('unguided', 'N/A')}
 
 ### Guided Run
 - **Score:** {guided_score}/100
+- **Execution Time:** {guided_time}
 - **Notes:** {analysis_notes.get('guided', 'N/A')}
 """
         report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -892,6 +1118,8 @@ def generate_summary_metrics(results_dir: Path) -> None:
         lines = report_path.read_text(encoding="utf-8").splitlines()
         unguided_score = None
         guided_score = None
+        unguided_time = None
+        guided_time = None
 
         for line in lines:
             if "Unguided Score:" in line:
@@ -902,24 +1130,58 @@ def generate_summary_metrics(results_dir: Path) -> None:
                 m = re.search(r"(\d+)\s*/\s*100", line)
                 if m:
                     guided_score = int(m.group(1))
+            elif line.startswith("- **Unguided Time:**"):
+                unguided_time = line.split("Unguided Time:**")[1].strip()
+            elif line.startswith("- **Guided Time:**"):
+                guided_time = line.split("Guided Time:**")[1].strip()
 
         if unguided_score is not None and guided_score is not None:
             uplift = guided_score - unguided_score
-            summary_rows.append((test, unguided_score, guided_score, uplift))
+            summary_rows.append(
+                (
+                    test,
+                    unguided_score,
+                    guided_score,
+                    uplift,
+                    unguided_time or "N/A",
+                    guided_time or "N/A",
+                )
+            )
 
     if summary_rows:
+        has_times = any(r[4] != "N/A" or r[5] != "N/A" for r in summary_rows)
         name_w = max(16, *(len(r[0]) for r in summary_rows))
-        header = (
-            f"| {'Test Case':<{name_w}} | {'Unguided Score':<14} | "
-            f"{'Guided Score':<12} | {'Uplift (+pp)':<12} |"
-        )
-        divider = (
-            f"| :{(name_w - 1)*'-'} | :{12*'-'}: | :{10*'-'}: | :{10*'-'}: |"
-        )
-        formatted_rows = [
-            f"| {t:<{name_w}} | {u!s:^14} | {g!s:^12} | {f'{up:+d}':^12} |"
-            for t, u, g, up in summary_rows
-        ]
+
+        if has_times:
+            u_time_w = max(13, *(len(r[4]) for r in summary_rows))
+            g_time_w = max(11, *(len(r[5]) for r in summary_rows))
+            header = (
+                f"| {'Test Case':<{name_w}} | {'Unguided Score':<14} | "
+                f"{'Guided Score':<12} | {'Uplift (+pp)':<12} | "
+                f"{'Unguided Time':<{u_time_w}} | {'Guided Time':<{g_time_w}} |"
+            )
+            divider = (
+                f"| :{(name_w - 1)*'-'} | :{12*'-'}: | :{10*'-'}: | :{10*'-'}: | "
+                f":{(u_time_w - 1)*'-'} | :{(g_time_w - 1)*'-'} |"
+            )
+            formatted_rows = [
+                f"| {t:<{name_w}} | {u!s:^14} | {g!s:^12} | {f'{up:+d}':^12} | "
+                f"{ut:<{u_time_w}} | {gt:<{g_time_w}} |"
+                for t, u, g, up, ut, gt in summary_rows
+            ]
+        else:
+            header = (
+                f"| {'Test Case':<{name_w}} | {'Unguided Score':<14} | "
+                f"{'Guided Score':<12} | {'Uplift (+pp)':<12} |"
+            )
+            divider = (
+                f"| :{(name_w - 1)*'-'} | :{12*'-'}: | :{10*'-'}: | :{10*'-'}: |"
+            )
+            formatted_rows = [
+                f"| {t:<{name_w}} | {u!s:^14} | {g!s:^12} | {f'{up:+d}':^12} |"
+                for t, u, g, up, _, _ in summary_rows
+            ]
+
         summary_file = results_dir / "summary_metrics.md"
         summary_md = (
             f"# Emscripten Guidance AI Agent Evaluation Metrics ({results_dir.name})\n\n"
