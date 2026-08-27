@@ -21,6 +21,7 @@ using the FLAM3 open source library.
    - Create a clean, responsive HTML/JS web application that loads the generated WebAssembly module.
    - Allow users to tweek parameter and generate new images.
    - Provide UI controls (buttons, dropdowns, or sliders) to control parameters
-   - Please ferify that the UI renders the flame images correctly, and also remains
-     responsive while new images are rendering.
+   - Verify that the UI renders the flame images correctly using a headless
+     browser or puppeteer. i.e. check the canvas contents after rendering is done.
+   - Verify that the UI remains responsive while new images are rendering.
 
