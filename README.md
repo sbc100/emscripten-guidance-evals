@@ -9,26 +9,26 @@ By comparing agent solutions generated **without extra context** (`unguided`) ag
 ```
 emscripten-guidance-evals/
 ├── run_evals.py          # Automated evaluation & benchmarking harness
-├── run_evals.sh          # Convenient shell wrapper around run_evals.py
 ├── guidance/             # Simplified Emscripten best practice documentation
 │   ├── best_practices.rst  # Core best practices from upstream Emscripten
 │   ├── best_practices.md   # Markdown formatted version for AI consumption
 │   └── cpp-on-the-web/     # Modern Web ES6/Embind skill and Makefile template
-├── tests/                # Prompt templates & grading criteria for each test
+├── tests/                # Prompt templates for each test
 │   ├── audio-processor/    # Audio waveform generation & filtering test case
 │   ├── file-compressor/    # File compression & decompression test case
+│   ├── fractal-flames/     # Flame fractal generator test case
 │   └── image-transcoder/   # Image manipulation & transcoding test case
 ├── evaluation/           # Evaluation prompts for LLM/agent code grading
 │   └── evaluation_prompt.md # Rubric prompt for grading generated workspaces
-└── results/              # Generated agent workspaces and evaluation reports
+└── results_xxx/          # Versioned evaluation workspaces, reports, & metrics
 ```
 
 ## Quickstart
 
 ### Full End-to-End Pipeline
 
-To run the complete evaluation pipeline (setup workspaces, run agent, build,
-and evaluate results) across all tests in one command:
+To run the complete evaluation pipeline (run agent in isolated `/tmp` workspace,
+build, and evaluate results) across all tests in one command:
 
 ```bash
 # Run full evaluation with Jetski CLI across all test cases:
@@ -42,21 +42,11 @@ and evaluate results) across all tests in one command:
 
 ### Step-by-Step Commands
 
-#### 1. Set Up Test Workspaces
+#### 1. Run AI Coding Agents
 
-To initialize clean workspaces (`unguided` and `guided`) for all test
-cases and populate them with prompts and local guidance documentation:
-
-```bash
-./run_evals.py setup
-# Or set up a specific test only:
-./run_evals.py setup --test file-compressor
-```
-
-### 2. Run AI Coding Agents
-
-You can run an agent across the setup workspaces using different runner engines
-(`jetski-cli`, `agentapi`, `gemini`, `claude`, `mock`, or `print`):
+Run agents across test cases using different runner engines (`jetski-cli`,
+`agentapi`, `gemini`, `claude`, `mock`, or `print`). Workspaces are prepared
+directly in isolated `/tmp` directories with clean environments:
 
 ```bash
 # Print prompts and directory paths to run manually or via subagents:
@@ -75,15 +65,16 @@ You can run an agent across the setup workspaces using different runner engines
 ./run_evals.py run --runner mock
 ```
 
-### 3. Verify Builds with Emscripten
+#### 2. Verify Builds with Emscripten
 
-Run `make clean all` inside each generated workspace to verify whether the agent's code compiles cleanly into a modern WebAssembly ES6 module:
+Run `make clean all` inside each generated workspace to verify whether the
+agent's code compiles cleanly into a modern WebAssembly ES6 module:
 
 ```bash
 ./run_evals.py build
 ```
 
-### 4. Evaluate Solutions & Generate Metrics
+#### 3. Evaluate Solutions & Generate Metrics
 
 Evaluate the generated `Makefile`, C++ code, and HTML/JS frontend against the
 4 evaluation categories (Basic Functionality & Testing, Compilation Flags,
@@ -94,17 +85,17 @@ Separate Compilation, and JS & C++ Interoperability):
 ```
 
 This generates detailed markdown reports in
-`results/<test_name>/evaluation_report.md` along with an executive summary table
-in `results/summary_metrics.md`.
+`results_xxx/<test_name>/evaluation_report.md` along with an executive summary
+table in `results_xxx/summary_metrics.md`.
 
-You can also re-generate `results/summary_metrics.md` at any time from all
+You can also re-generate `results_xxx/summary_metrics.md` at any time from all
 existing test reports:
 
 ```bash
 ./run_evals.py summarize
 ```
 
-### 5. Check Overall Status
+#### 4. Check Overall Status
 
 View a quick table showing workspace setup, build status, and evaluation scores
 across all test cases:

@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -19,7 +20,7 @@ ROOT_DIR = Path(__file__).resolve().parent
 TESTS_DIR = ROOT_DIR / "tests"
 GUIDANCE_DIR = ROOT_DIR / "guidance"
 EVALUATION_DIR = ROOT_DIR / "evaluation"
-RESULTS_DIR = ROOT_DIR / "results"
+DEFAULT_RESULTS_DIR = ROOT_DIR / "results"
 
 
 def get_all_tests() -> list[str]:
@@ -33,61 +34,246 @@ def get_all_tests() -> list[str]:
     ]
 
 
-def setup_tests(tests: list[str]) -> None:
-    """Set up unguided and guided workspaces for the specified tests."""
-    for test in tests:
-        test_dir = TESTS_DIR / test
-        prompt_file = test_dir / "prompt.md"
-        if not prompt_file.exists():
-            print(f"Warning: Prompt file not found for test '{test}', skipping.")
+def get_results_dirs() -> list[Path]:
+    """Return all existing results directories sorted by version."""
+    dirs: list[tuple[int, Path]] = []
+    if not ROOT_DIR.exists():
+        return []
+    for d in ROOT_DIR.iterdir():
+        if not d.is_dir():
             continue
+        if d.name == "results":
+            dirs.append((0, d))
+        else:
+            m = re.match(r"^results_(\d+)$", d.name)
+            if m:
+                dirs.append((int(m.group(1)), d))
+    dirs.sort(key=lambda x: x[0])
+    return [d[1] for d in dirs]
 
-        prompt_text = prompt_file.read_text(encoding="utf-8")
 
-        for mode in ["unguided", "guided"]:
-            workspace = RESULTS_DIR / test / mode
-            if workspace.exists():
-                shutil.rmtree(workspace)
-            workspace.mkdir(parents=True, exist_ok=True)
+def get_latest_results_dir() -> Path:
+    """Return the latest results directory, or default to results_001."""
+    dirs = get_results_dirs()
+    if dirs:
+        return dirs[-1]
+    return ROOT_DIR / "results_001"
 
-            # Copy prompt into workspace
-            (workspace / "prompt.md").write_text(prompt_text, encoding="utf-8")
 
-            if mode == "guided":
-                # Copy guidance folder into the guided workspace so the agent
-                # has direct local access to the docs
-                guided_guidance = workspace / "guidance"
-                if guided_guidance.exists():
-                    shutil.rmtree(guided_guidance)
-                shutil.copytree(GUIDANCE_DIR, guided_guidance)
+def get_next_results_dir() -> Path:
+    """Compute the next unused results_<num> directory (e.g. results_001)."""
+    max_idx = 0
+    for d in ROOT_DIR.iterdir():
+        if not d.is_dir():
+            continue
+        m = re.match(r"^results_(\d+)$", d.name)
+        if m:
+            max_idx = max(max_idx, int(m.group(1)))
+    next_idx = max_idx + 1
+    return ROOT_DIR / f"results_{next_idx:03d}"
 
-                # Create an enhanced prompt for guided mode
-                guided_prompt = (
-                    f"# Task: {test}\n\n"
-                    "You MUST read and follow the Emscripten best practices "
-                    "in `./guidance/best_practices.rst` and "
-                    "`./guidance/cpp-on-the-web/guide.md` before generating "
-                    "any code or Makefile.\n\n"
-                    f"{prompt_text}"
-                )
-                (workspace / "agent_prompt.md").write_text(
-                    guided_prompt, encoding="utf-8"
-                )
-            else:
-                (workspace / "agent_prompt.md").write_text(
-                    prompt_text, encoding="utf-8"
-                )
 
-            print(f"Set up workspace: {workspace}")
+def resolve_results_dir(
+    target: str | Path | None, default_to_new: bool = False
+) -> Path:
+    """Resolve the target results directory based on arguments."""
+    if target:
+        p = Path(target)
+        return p if p.is_absolute() else ROOT_DIR / p
+    if default_to_new:
+        return get_next_results_dir()
+    return get_latest_results_dir()
+
+
+def generate_index_html(results_dir: Path) -> None:
+    """Generate an index.html navigation page for a results directory."""
+    tests = get_all_tests()
+    rows = []
+    for test in tests:
+        guided_html = results_dir / test / "guided" / "index.html"
+        unguided_html = results_dir / test / "unguided" / "index.html"
+        report_md = results_dir / test / "evaluation_report.md"
+
+        guided_link = (
+            f'<a href="{test}/guided/index.html">Guided</a>'
+            if guided_html.exists()
+            else "Guided"
+        )
+        unguided_link = (
+            f'<a href="{test}/unguided/index.html">Unguided</a>'
+            if unguided_html.exists()
+            else "Unguided"
+        )
+        report_link = (
+            f'<a href="{test}/evaluation_report.md">Report</a>'
+            if report_md.exists()
+            else "Report"
+        )
+        rows.append(
+            f"      <tr>\n"
+            f"        <td>{test}</td>\n"
+            f"        <td>{guided_link}</td>\n"
+            f"        <td>{unguided_link}</td>\n"
+            f"        <td>{report_link}</td>\n"
+            f"      </tr>"
+        )
+
+    tbody = "\n".join(rows)
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Emscripten Guidance Evaluation Results ({results_dir.name})</title>
+  <style>
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      line-height: 1.5;
+      color: #24292f;
+    }}
+    @media (prefers-color-scheme: dark) {{
+      body {{
+        background-color: #0d1117;
+        color: #c9d1d9;
+      }}
+      table th {{
+        background-color: #161b22;
+        border-color: #30363d;
+      }}
+      table td {{
+        border-color: #30363d;
+      }}
+      a {{
+        color: #58a6ff;
+      }}
+    }}
+    h1 {{
+      margin-bottom: 1.5rem;
+    }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }}
+    th, td {{
+      border: 1px solid #d0d7de;
+      padding: 8px 12px;
+      text-align: left;
+    }}
+    th {{
+      background-color: #f6f8fa;
+    }}
+    a {{
+      color: #0969da;
+      text-decoration: none;
+    }}
+    a:hover {{
+      text-decoration: underline;
+    }}
+  </style>
+</head>
+<body>
+  <h1>Emscripten Guidance Evaluation Results ({results_dir.name})</h1>
+  <table>
+    <thead>
+      <tr>
+        <th>Test Case</th>
+        <th>Guided</th>
+        <th>Unguided</th>
+        <th>Report</th>
+      </tr>
+    </thead>
+    <tbody>
+{tbody}
+    </tbody>
+  </table>
+</body>
+</html>
+"""
+    (results_dir / "index.html").write_text(html_content, encoding="utf-8")
+
+
+def prepare_workspace(test: str, mode: str, target_dir: Path) -> str:
+    """Populate target_dir with prompt and guidance; return agent prompt text."""
+    target_dir.mkdir(parents=True, exist_ok=True)
+    test_dir = TESTS_DIR / test
+    prompt_file = test_dir / "prompt.md"
+    if not prompt_file.exists():
+        raise FileNotFoundError(f"Prompt file not found for test '{test}'")
+
+    prompt_text = prompt_file.read_text(encoding="utf-8")
+    (target_dir / "prompt.md").write_text(prompt_text, encoding="utf-8")
+
+    if mode == "guided":
+        guided_guidance = target_dir / "guidance"
+        if guided_guidance.exists():
+            shutil.rmtree(guided_guidance)
+        shutil.copytree(GUIDANCE_DIR, guided_guidance)
+
+        agent_prompt = (
+            f"# Task: {test}\n\n"
+            "You MUST read and follow the Emscripten best practices "
+            "in `./guidance/best_practices.rst` and "
+            "`./guidance/cpp-on-the-web/guide.md` before generating "
+            "any code or Makefile.\n\n"
+            f"{prompt_text}"
+        )
+    else:
+        agent_prompt = prompt_text
+
+    (target_dir / "agent_prompt.md").write_text(agent_prompt, encoding="utf-8")
+    return agent_prompt
+
+
+def create_isolated_env(temp_home: Path) -> dict[str, str]:
+    """Create a sanitized environment dictionary with an isolated HOME directory."""
+    temp_home.mkdir(parents=True, exist_ok=True)
+
+    env = os.environ.copy()
+    env["HOME"] = str(temp_home)
+    env["HISTFILE"] = "/dev/null"
+    env["HISTSIZE"] = "0"
+
+    # Remove variables that could leak outer workspace paths, git or shell history
+    for var in [
+        "OLDPWD",
+        "PWD",
+        "GEMINI_CLI_WORKSPACE_DIR",
+        "WORKSPACE_ROOT",
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+    ]:
+        env.pop(var, None)
+
+    if "ANTIGRAVITY_PROJECT_ID" not in env:
+        env["ANTIGRAVITY_PROJECT_ID"] = "default-cli-project"
+
+    return env
 
 
 def wait_for_agentapi_conversation(
     conversation_id: str,
     timeout_seconds: int = 600,
     poll_interval: float = 2.0,
+    temp_home: Path | None = None,
 ) -> bool:
     """Poll the agent transcript log until completion or timeout."""
-    transcript_path = (
+    candidate_paths = []
+    if temp_home:
+        candidate_paths.append(
+            temp_home
+            / ".gemini"
+            / "jetski"
+            / "brain"
+            / conversation_id
+            / ".system_generated"
+            / "logs"
+            / "transcript.jsonl"
+        )
+    candidate_paths.append(
         Path.home()
         / ".gemini"
         / "jetski"
@@ -111,7 +297,8 @@ def wait_for_agentapi_conversation(
             )
             return False
 
-        if transcript_path.exists():
+        transcript_path = next((p for p in candidate_paths if p.exists()), None)
+        if transcript_path:
             try:
                 raw = transcript_path.read_text(encoding="utf-8").strip()
                 if raw:
@@ -170,151 +357,259 @@ def wait_for_agentapi_conversation(
         time.sleep(poll_interval)
 
 
+def format_duration(seconds: float) -> str:
+    """Format duration into human readable string (e.g. 45.2s or 1m 35.2s)."""
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    m, s = divmod(int(seconds), 60)
+    frac = seconds - int(seconds)
+    return f"{m}m {s + frac:04.1f}s ({seconds:.1f}s)"
+
+
+def print_timing_summary(
+    timing_data: dict[tuple[str, str], float],
+    total_elapsed: float,
+) -> None:
+    """Print execution timing breakdown and total elapsed time."""
+    if not timing_data:
+        print(f"\nTotal elapsed time: {format_duration(total_elapsed)}")
+        return
+
+    tests_seen: list[str] = []
+    for test, _ in timing_data:
+        if test not in tests_seen:
+            tests_seen.append(test)
+
+    name_w = max(20, *(len(t) for t in tests_seen))
+    print("\n=== Execution Timing ===")
+    print(
+        f"{'Test Case':<{name_w}} | {'Unguided':<12} | {'Guided':<12} | {'Total':<14}"
+    )
+    print("-" * (name_w + 44))
+
+    for test in tests_seen:
+        u_time = timing_data.get((test, "unguided"))
+        g_time = timing_data.get((test, "guided"))
+        u_str = format_duration(u_time) if u_time is not None else "N/A"
+        g_str = format_duration(g_time) if g_time is not None else "N/A"
+        t_time = (u_time or 0.0) + (g_time or 0.0)
+        t_str = format_duration(t_time)
+        print(f"{test:<{name_w}} | {u_str:<12} | {g_str:<12} | {t_str:<14}")
+
+    print("-" * (name_w + 44))
+    print(f"Total time taken: {format_duration(total_elapsed)}")
+
+
 def run_agent(
     tests: list[str],
     runner: str,
+    results_dir: Path,
     async_mode: bool = False,
     timeout: int = 600,
-) -> None:
-    """Run the specified agent runner across the test workspaces."""
+) -> dict[tuple[str, str], float]:
+    """Run the specified agent runner across test cases in isolated /tmp workspaces."""
+    results_dir.mkdir(parents=True, exist_ok=True)
+    timing_data: dict[tuple[str, str], float] = {}
+
     for test in tests:
         for mode in ["unguided", "guided"]:
-            workspace = RESULTS_DIR / test / mode
-            if not workspace.exists():
-                print(
-                    f"Workspace {workspace} does not exist. Run 'setup' first."
+            step_start = time.time()
+            workspace = results_dir / test / mode
+
+            print(
+                f"\n--- Running [{runner}] on {test} ({mode}) [{results_dir.name}] ---"
+            )
+
+            temp_dir_obj = (
+                tempfile.TemporaryDirectory(
+                    prefix=f"emscripten_eval_{test}_{mode}_"
                 )
-                continue
+                if not async_mode
+                else None
+            )
+            temp_dir_path = (
+                Path(temp_dir_obj.name)
+                if temp_dir_obj
+                else Path(
+                    tempfile.mkdtemp(prefix=f"emscripten_eval_{test}_{mode}_")
+                )
+            )
 
-            prompt_path = workspace / "agent_prompt.md"
-            prompt_content = prompt_path.read_text(encoding="utf-8")
+            try:
+                temp_workspace = temp_dir_path / "workspace"
+                temp_home = temp_dir_path / "home"
+                temp_workspace.mkdir(parents=True, exist_ok=True)
+                temp_home.mkdir(parents=True, exist_ok=True)
 
-            print(f"\n--- Running [{runner}] on {test} ({mode}) ---")
+                # Prepare test workspace directly in /tmp
+                prompt_content = prepare_workspace(test, mode, temp_workspace)
 
-            if runner == "print":
-                print(f"Directory: {workspace}")
-                print(f"Prompt:\n{prompt_content[:300]}...\n")
-            elif runner == "agentapi":
-                agentapi_bin = shutil.which("agentapi")
-                if not agentapi_bin:
-                    default_path = (
-                        Path.home() / ".gemini" / "jetski" / "bin" / "agentapi"
-                    )
-                    if default_path.exists():
-                        agentapi_bin = str(default_path)
-                if not agentapi_bin:
-                    print(
-                        "Error: 'agentapi' CLI not found in PATH or "
-                        "~/.gemini/jetski/bin/agentapi.\n"
-                        "Please ensure Jetski is installed or add "
-                        "~/.gemini/jetski/bin to PATH."
-                    )
+                if runner == "print":
+                    print(f"Target directory: {workspace}")
+                    print(f"Prompt:\n{prompt_content[:300]}...\n")
                     continue
 
-                env = os.environ.copy()
-                if "ANTIGRAVITY_PROJECT_ID" not in env:
-                    env["ANTIGRAVITY_PROJECT_ID"] = "default-cli-project"
+                env = create_isolated_env(temp_home)
+                print(f"Isolated workspace: {temp_workspace}")
+                print(f"Isolated HOME: {temp_home}")
 
-                cmd = [
-                    agentapi_bin,
-                    "new-conversation",
-                    f"--title={test} ({mode})",
-                    prompt_content,
-                ]
-                print(
-                    f"Executing: {' '.join(cmd[:3])} '<prompt>' in {workspace}"
-                )
-                res = subprocess.run(
-                    cmd,
-                    cwd=workspace,
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-
-                if res.returncode != 0:
-                    print(f"Error starting conversation: {res.stderr}")
-                    continue
-
-                conversation_id = None
-                try:
-                    data = json.loads(res.stdout)
-                    conversation_id = (
-                        data.get("response", {})
-                        .get("newConversation", {})
-                        .get("conversationId")
-                    )
-                except (json.JSONDecodeError, AttributeError):
-                    match = re.search(
-                        r'"conversationId":\s*"([^"]+)"', res.stdout
-                    )
-                    if match:
-                        conversation_id = match.group(1)
-
-                if not conversation_id:
-                    print(
-                        f"Failed to extract conversationId from output:\n"
-                        f"{res.stdout}"
-                    )
-                    continue
-
-                print(f"Started conversation: {conversation_id}")
-                if not async_mode:
-                    wait_for_agentapi_conversation(
-                        conversation_id, timeout_seconds=timeout
-                    )
-            elif runner in ("jetski-cli", "jetski"):
-                jetski_bin = shutil.which("jetski-cli") or shutil.which(
-                    "jetski"
-                )
-                if not jetski_bin:
-                    release_path = Path(
-                        "/google/bin/releases/jetski-devs/tools/cli"
-                    )
-                    if release_path.exists():
-                        jetski_bin = str(release_path)
-                    else:
+                if runner == "agentapi":
+                    agentapi_bin = shutil.which("agentapi")
+                    if not agentapi_bin:
                         default_path = (
                             Path.home()
                             / ".gemini"
                             / "jetski"
                             / "bin"
-                            / "jetski"
+                            / "agentapi"
                         )
                         if default_path.exists():
-                            jetski_bin = str(default_path)
-                if not jetski_bin:
+                            agentapi_bin = str(default_path)
+                    if not agentapi_bin:
+                        print(
+                            "Error: 'agentapi' CLI not found in PATH or "
+                            "~/.gemini/jetski/bin/agentapi.\n"
+                            "Please ensure Jetski is installed or add "
+                            "~/.gemini/jetski/bin to PATH."
+                        )
+                        continue
+
+                    cmd = [
+                        agentapi_bin,
+                        "new-conversation",
+                        f"--title={test} ({mode})",
+                        prompt_content,
+                    ]
                     print(
-                        "Error: Jetski CLI not found in PATH or "
-                        "/google/bin/releases/jetski-devs/tools/cli.\n"
-                        "Please ensure Jetski CLI is installed."
+                        f"Executing: {' '.join(cmd[:3])} '<prompt>' in {temp_workspace}"
                     )
+                    res = subprocess.run(
+                        cmd,
+                        cwd=temp_workspace,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+
+                    if res.returncode != 0:
+                        print(f"Error starting conversation: {res.stderr}")
+                        continue
+
+                    conversation_id = None
+                    try:
+                        data = json.loads(res.stdout)
+                        conversation_id = (
+                            data.get("response", {})
+                            .get("newConversation", {})
+                            .get("conversationId")
+                        )
+                    except (json.JSONDecodeError, AttributeError):
+                        match = re.search(
+                            r'"conversationId":\s*"([^"]+)"', res.stdout
+                        )
+                        if match:
+                            conversation_id = match.group(1)
+
+                    if not conversation_id:
+                        print(
+                            f"Failed to extract conversationId from output:\n"
+                            f"{res.stdout}"
+                        )
+                        continue
+
+                    print(f"Started conversation: {conversation_id}")
+                    if not async_mode:
+                        wait_for_agentapi_conversation(
+                            conversation_id,
+                            timeout_seconds=timeout,
+                            temp_home=temp_home,
+                        )
+                elif runner in ("jetski-cli", "jetski"):
+                    jetski_bin = shutil.which("jetski-cli") or shutil.which(
+                        "jetski"
+                    )
+                    if not jetski_bin:
+                        release_path = Path(
+                            "/google/bin/releases/jetski-devs/tools/cli"
+                        )
+                        if release_path.exists():
+                            jetski_bin = str(release_path)
+                        else:
+                            default_path = (
+                                Path.home()
+                                / ".gemini"
+                                / "jetski"
+                                / "bin"
+                                / "jetski"
+                            )
+                            if default_path.exists():
+                                jetski_bin = str(default_path)
+                    if not jetski_bin:
+                        print(
+                            "Error: Jetski CLI not found in PATH or "
+                            "/google/bin/releases/jetski-devs/tools/cli.\n"
+                            "Please ensure Jetski CLI is installed."
+                        )
+                        continue
+
+                    timeout_str = f"{timeout}s"
+                    cmd = [
+                        jetski_bin,
+                        "--isolated_env",
+                        "--new-project",
+                        "--dangerously-skip-permissions",
+                        f"--print-timeout={timeout_str}",
+                        "-p",
+                        prompt_content,
+                    ]
+                    print(f"Executing Jetski CLI in {temp_workspace}...")
+                    subprocess.run(cmd, cwd=temp_workspace, env=env, check=False)
+                elif runner == "gemini":
+                    cmd = ["gemini", "-p", prompt_content]
+                    print(f"Executing gemini CLI in {temp_workspace}")
+                    subprocess.run(cmd, cwd=temp_workspace, env=env, check=False)
+                elif runner == "claude":
+                    cmd = ["claude", "-p", prompt_content]
+                    print(f"Executing claude CLI in {temp_workspace}")
+                    subprocess.run(cmd, cwd=temp_workspace, env=env, check=False)
+                elif runner == "mock":
+                    print(
+                        f"Generating mock baseline solution for {test} ({mode})..."
+                    )
+                    generate_mock_solution(temp_workspace, mode, test)
+                else:
+                    print(f"Unknown runner: {runner}")
                     continue
 
-                timeout_str = f"{timeout}s"
-                cmd = [
-                    jetski_bin,
-                    "--dangerously-skip-permissions",
-                    f"--print-timeout={timeout_str}",
-                    "-p",
-                    prompt_content,
-                ]
-                print(f"Executing Jetski CLI in {workspace}...")
-                subprocess.run(cmd, cwd=workspace, check=False)
-            elif runner == "gemini":
-                cmd = ["gemini", "-p", prompt_content]
-                print(f"Executing gemini CLI in {workspace}")
-                subprocess.run(cmd, cwd=workspace, check=False)
-            elif runner == "claude":
-                cmd = ["claude", "-p", prompt_content]
-                print(f"Executing claude CLI in {workspace}")
-                subprocess.run(cmd, cwd=workspace, check=False)
-            elif runner == "mock":
-                print(f"Generating mock baseline solution for {test} ({mode})...")
-                generate_mock_solution(workspace, mode, test)
-            else:
-                print(f"Unknown runner: {runner}")
+                if not async_mode:
+                    duration = time.time() - step_start
+                    timing_data[(test, mode)] = duration
+                    workspace.mkdir(parents=True, exist_ok=True)
+                    # Sync generated files from temp_workspace back to workspace
+                    for item in temp_workspace.iterdir():
+                        dest = workspace / item.name
+                        if item.is_dir():
+                            if dest.exists():
+                                shutil.rmtree(dest)
+                            shutil.copytree(item, dest)
+                        else:
+                            shutil.copy2(item, dest)
+                    print(
+                        f"Finished {test} ({mode}) in {format_duration(duration)} "
+                        f"(synced to {workspace})"
+                    )
+                else:
+                    print(
+                        f"Async run launched in {temp_workspace}. "
+                        f"Artifacts will remain at {temp_dir_path} until synced."
+                    )
+            finally:
+                if temp_dir_obj:
+                    temp_dir_obj.cleanup()
+
+    generate_index_html(results_dir)
+    return timing_data
 
 
 def generate_mock_solution(workspace: Path, mode: Path | str, test: str) -> None:
@@ -422,14 +717,16 @@ int main() {
     print(f"Mock files written to {workspace}")
 
 
-def build_workspaces(tests: list[str]) -> None:
+def build_workspaces(tests: list[str], results_dir: Path) -> None:
     """Run make or emcc inside generated workspaces to verify build status."""
     emsdk_path = ROOT_DIR.parent / "emsdk" / "emsdk_env.sh"
-    source_cmd = f"source {emsdk_path} >/dev/null 2>&1 && " if emsdk_path.exists() else ""
+    source_cmd = (
+        f"source {emsdk_path} >/dev/null 2>&1 && " if emsdk_path.exists() else ""
+    )
 
     for test in tests:
         for mode in ["unguided", "guided"]:
-            workspace = RESULTS_DIR / test / mode
+            workspace = results_dir / test / mode
             if not workspace.exists() or not (workspace / "Makefile").exists():
                 continue
 
@@ -451,14 +748,14 @@ def build_workspaces(tests: list[str]) -> None:
             print(f"  Build outcome: {status} (log: {log_file})")
 
 
-def evaluate_tests(tests: list[str]) -> None:
+def evaluate_tests(tests: list[str], results_dir: Path) -> None:
     """Evaluate and grade the generated solutions against best practices."""
     for test in tests:
         scores = {}
         analysis_notes = {}
 
         for mode in ["unguided", "guided"]:
-            workspace = RESULTS_DIR / test / mode
+            workspace = results_dir / test / mode
             if not workspace.exists() or not (workspace / "Makefile").exists():
                 scores[mode] = 0
                 analysis_notes[mode] = "Workspace or Makefile missing."
@@ -477,11 +774,17 @@ def evaluate_tests(tests: list[str]) -> None:
 
             # Category 1: Basic Functionality & Testing (25 pts)
             cat1 = 0
-            if (workspace / "module.wasm").exists() or list(workspace.glob("*.wasm")):
+            if (workspace / "module.wasm").exists() or list(
+                workspace.glob("*.wasm")
+            ):
                 cat1 += 10
-            if (workspace / "index.html").exists() and len((workspace / "index.html").read_text(encoding="utf-8")) > 100:
+            if (workspace / "index.html").exists() and len(
+                (workspace / "index.html").read_text(encoding="utf-8")
+            ) > 100:
                 cat1 += 10
-            if (workspace / "module.mjs").exists() or list(workspace.glob("*.mjs")):
+            if (workspace / "module.mjs").exists() or list(
+                workspace.glob("*.mjs")
+            ):
                 cat1 += 5
             score += min(cat1, 25)
             notes.append(f"Basic Functionality & Testing: {cat1}/25")
@@ -494,14 +797,19 @@ def evaluate_tests(tests: list[str]) -> None:
                 cat2 += 8
             if "-Werror" in makefile and "-Wall" in makefile:
                 cat2 += 5
-            if "-sWASM=1" not in makefile and "-sUSE_PTHREADS=1" not in makefile:
+            if (
+                "-sWASM=1" not in makefile
+                and "-sUSE_PTHREADS=1" not in makefile
+            ):
                 cat2 += 4
             score += min(cat2, 25)
             notes.append(f"Compilation Flags: {cat2}/25")
 
             # Category 3: Separate Compilation (25 pts)
             cat3 = 0
-            if "-c " in makefile and ("%.o: %.cpp" in makefile or ".o" in makefile):
+            if "-c " in makefile and (
+                "%.o: %.cpp" in makefile or ".o" in makefile
+            ):
                 cat3 += 15
             if "-flto" in makefile or "-O3" in makefile or "-Oz" in makefile:
                 cat3 += 10
@@ -514,7 +822,7 @@ def evaluate_tests(tests: list[str]) -> None:
                 cat4 += 15
             elif "extern " in cpp or "EXPORTED_FUNCTIONS" in makefile:
                 cat4 += 5
-            if "type=\"module\"" in html or "import Module" in html:
+            if 'type="module"' in html or "import Module" in html:
                 cat4 += 10
             score += min(cat4, 25)
             notes.append(f"JS & C++ Interop: {cat4}/25")
@@ -526,7 +834,7 @@ def evaluate_tests(tests: list[str]) -> None:
         guided_score = scores.get("guided", 0)
         uplift = guided_score - unguided_score
 
-        report_path = RESULTS_DIR / test / "evaluation_report.md"
+        report_path = results_dir / test / "evaluation_report.md"
         report_content = f"""# Evaluation Report: {test}
 
 ## Executive Summary
@@ -547,16 +855,17 @@ def evaluate_tests(tests: list[str]) -> None:
         report_path.write_text(report_content, encoding="utf-8")
         print(f"Wrote evaluation report: {report_path}")
 
-    generate_summary_metrics()
+    generate_summary_metrics(results_dir)
+    generate_index_html(results_dir)
 
 
-def generate_summary_metrics() -> None:
+def generate_summary_metrics(results_dir: Path) -> None:
     """Generate or update summary_metrics.md from all existing evaluation reports."""
     tests = get_all_tests()
     summary_rows = []
 
     for test in tests:
-        report_path = RESULTS_DIR / test / "evaluation_report.md"
+        report_path = results_dir / test / "evaluation_report.md"
         if not report_path.exists():
             continue
 
@@ -591,9 +900,9 @@ def generate_summary_metrics() -> None:
             f"| {t:<{name_w}} | {u!s:^14} | {g!s:^12} | {f'{up:+d}':^12} |"
             for t, u, g, up in summary_rows
         ]
-        summary_file = RESULTS_DIR / "summary_metrics.md"
+        summary_file = results_dir / "summary_metrics.md"
         summary_md = (
-            "# Emscripten Guidance AI Agent Evaluation Metrics\n\n"
+            f"# Emscripten Guidance AI Agent Evaluation Metrics ({results_dir.name})\n\n"
             + header
             + "\n"
             + divider
@@ -605,43 +914,62 @@ def generate_summary_metrics() -> None:
         print(f"\nWrote summary metrics: {summary_file}")
 
 
-def print_status() -> None:
+def print_status(results_dir: Path | None = None) -> None:
     """Print status table of all test workspaces."""
-    print("\n=== Emscripten Evaluation Harness Status ===")
+    if results_dir is None:
+        target_dirs = get_results_dirs()
+        if not target_dirs:
+            print("No results directories found.")
+            return
+    else:
+        target_dirs = [results_dir]
+
     tests = get_all_tests()
     if not tests:
         print("No tests found.")
         return
 
-    print(f"{'Test Case':<20} | {'Mode':<10} | {'Makefile':<10} | {'Build':<8} | {'Score':<8}")
-    print("-" * 65)
+    for rdir in target_dirs:
+        print(f"\n=== Emscripten Evaluation Status [{rdir.name}] ===")
+        print(
+            f"{'Test Case':<20} | {'Mode':<10} | {'Makefile':<10} | {'Build':<8} | {'Score':<8}"
+        )
+        print("-" * 65)
 
-    for test in tests:
-        for mode in ["unguided", "guided"]:
-            workspace = RESULTS_DIR / test / mode
-            has_makefile = (workspace / "Makefile").exists()
-            build_log = workspace / "build.log"
-            build_status = "N/A"
-            if build_log.exists():
-                txt = build_log.read_text(encoding="utf-8")
-                build_status = "FAIL" if "error:" in txt.lower() else "PASS"
-            elif has_makefile and (workspace / "module.mjs").exists():
-                build_status = "PASS"
+        for test in tests:
+            for mode in ["unguided", "guided"]:
+                workspace = rdir / test / mode
+                has_makefile = (workspace / "Makefile").exists()
+                build_log = workspace / "build.log"
+                build_status = "N/A"
+                if build_log.exists():
+                    txt = build_log.read_text(encoding="utf-8")
+                    build_status = (
+                        "FAIL" if "error:" in txt.lower() else "PASS"
+                    )
+                elif has_makefile and (workspace / "module.mjs").exists():
+                    build_status = "PASS"
 
-            score = "N/A"
-            report = RESULTS_DIR / test / "evaluation_report.md"
-            if report.exists():
-                lines = report.read_text(encoding="utf-8").splitlines()
-                for line in lines:
-                    if f"{mode.capitalize()} Score:" in line:
-                        score = line.split("Score:")[1].split("/")[0].replace("*", "").strip() + "/100"
-                        break
+                score = "N/A"
+                report = rdir / test / "evaluation_report.md"
+                if report.exists():
+                    lines = report.read_text(encoding="utf-8").splitlines()
+                    for line in lines:
+                        if f"{mode.capitalize()} Score:" in line:
+                            score = (
+                                line.split("Score:")[1]
+                                .split("/")[0]
+                                .replace("*", "")
+                                .strip()
+                                + "/100"
+                            )
+                            break
 
-            print(
-                f"{test:<20} | {mode:<10} | "
-                f"{'Yes' if has_makefile else 'No':<10} | "
-                f"{build_status:<8} | {score:<8}"
-            )
+                print(
+                    f"{test:<20} | {mode:<10} | "
+                    f"{'Yes' if has_makefile else 'No':<10} | "
+                    f"{build_status:<8} | {score:<8}"
+                )
 
 
 def main() -> None:
@@ -650,10 +978,6 @@ def main() -> None:
         description="Automated Emscripten AI Agent Evaluation Harness"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # setup
-    setup_p = subparsers.add_parser("setup", help="Set up test workspaces")
-    setup_p.add_argument("--test", help="Specific test name (or all by default)")
 
     # run
     run_p = subparsers.add_parser("run", help="Run agent on workspaces")
@@ -668,10 +992,15 @@ def main() -> None:
             "claude",
             "mock",
         ],
-        default="print",
-        help="Runner engine to execute",
+        default="jetski-cli",
+        help="Runner engine to execute (default: jetski-cli)",
     )
     run_p.add_argument("--test", help="Specific test name")
+    run_p.add_argument(
+        "-d",
+        "--results-dir",
+        help="Target results directory (default: new results_xxx)",
+    )
     run_p.add_argument(
         "--async",
         dest="async_mode",
@@ -690,21 +1019,38 @@ def main() -> None:
         "build", help="Run make inside test workspaces"
     )
     build_p.add_argument("--test", help="Specific test name")
+    build_p.add_argument(
+        "-d",
+        "--results-dir",
+        help="Target results directory (default: latest results directory)",
+    )
 
     # evaluate
-    eval_p = subparsers.add_parser("evaluate", help="Evaluate and score outputs")
+    eval_p = subparsers.add_parser(
+        "evaluate", help="Evaluate and score outputs"
+    )
     eval_p.add_argument("--test", help="Specific test name")
+    eval_p.add_argument(
+        "-d",
+        "--results-dir",
+        help="Target results directory (default: latest results directory)",
+    )
 
     # summarize
-    subparsers.add_parser(
+    sum_p = subparsers.add_parser(
         "summarize",
         help="Re-generate summary_metrics.md from all existing reports",
+    )
+    sum_p.add_argument(
+        "-d",
+        "--results-dir",
+        help="Target results directory (default: latest results directory)",
     )
 
     # all
     all_p = subparsers.add_parser(
         "all",
-        help="Run full pipeline (setup -> run -> build -> evaluate)",
+        help="Run full pipeline (run -> build -> evaluate)",
     )
     all_p.add_argument(
         "--runner",
@@ -720,7 +1066,14 @@ def main() -> None:
         default="jetski-cli",
         help="Runner engine to execute (default: jetski-cli)",
     )
-    all_p.add_argument("--test", help="Specific test name (or all by default)")
+    all_p.add_argument(
+        "--test", help="Specific test name (or all by default)"
+    )
+    all_p.add_argument(
+        "-d",
+        "--results-dir",
+        help="Target results directory (default: new results_xxx)",
+    )
     all_p.add_argument(
         "--async",
         dest="async_mode",
@@ -735,41 +1088,73 @@ def main() -> None:
     )
 
     # status
-    subparsers.add_parser("status", help="Show status of test workspaces")
+    status_p = subparsers.add_parser(
+        "status", help="Show status of test workspaces"
+    )
+    status_p.add_argument(
+        "-d",
+        "--results-dir",
+        help="Target results directory (default: all results directories)",
+    )
 
     args = parser.parse_args()
-
     tests = [args.test] if getattr(args, "test", None) else get_all_tests()
+    start_time = time.time()
 
-    if args.command == "setup":
-        setup_tests(tests)
-    elif args.command == "run":
-        run_agent(
-            tests,
-            args.runner,
-            async_mode=args.async_mode,
-            timeout=args.timeout,
+    if args.command == "run":
+        target_dir = resolve_results_dir(
+            args.results_dir, default_to_new=bool(not args.results_dir)
         )
-    elif args.command == "build":
-        build_workspaces(tests)
-    elif args.command == "evaluate":
-        evaluate_tests(tests)
-    elif args.command == "summarize":
-        generate_summary_metrics()
-    elif args.command == "all":
-        setup_tests(tests)
-        run_agent(
+        timing_data = run_agent(
             tests,
             args.runner,
+            results_dir=target_dir,
             async_mode=args.async_mode,
             timeout=args.timeout,
         )
         if not args.async_mode:
-            build_workspaces(tests)
-            evaluate_tests(tests)
-            print_status()
+            total_elapsed = time.time() - start_time
+            print_timing_summary(timing_data, total_elapsed)
+    elif args.command == "build":
+        target_dir = resolve_results_dir(args.results_dir, default_to_new=False)
+        build_workspaces(tests, target_dir)
+        total_elapsed = time.time() - start_time
+        print(f"\nTotal build time: {format_duration(total_elapsed)}")
+    elif args.command == "evaluate":
+        target_dir = resolve_results_dir(args.results_dir, default_to_new=False)
+        evaluate_tests(tests, target_dir)
+        total_elapsed = time.time() - start_time
+        print(f"\nTotal evaluate time: {format_duration(total_elapsed)}")
+    elif args.command == "summarize":
+        target_dir = resolve_results_dir(args.results_dir, default_to_new=False)
+        generate_summary_metrics(target_dir)
+        total_elapsed = time.time() - start_time
+        print(f"\nTotal summarize time: {format_duration(total_elapsed)}")
+    elif args.command == "all":
+        target_dir = resolve_results_dir(
+            args.results_dir,
+            default_to_new=bool(not args.results_dir),
+        )
+        timing_data = run_agent(
+            tests,
+            args.runner,
+            results_dir=target_dir,
+            async_mode=args.async_mode,
+            timeout=args.timeout,
+        )
+        if not args.async_mode:
+            build_workspaces(tests, target_dir)
+            evaluate_tests(tests, target_dir)
+            print_status(target_dir)
+            total_elapsed = time.time() - start_time
+            print_timing_summary(timing_data, total_elapsed)
     elif args.command == "status":
-        print_status()
+        target_dir = (
+            resolve_results_dir(args.results_dir, default_to_new=False)
+            if args.results_dir
+            else None
+        )
+        print_status(target_dir)
 
 
 if __name__ == "__main__":
