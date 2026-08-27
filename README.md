@@ -25,9 +25,27 @@ emscripten-guidance-evals/
 
 ## Quickstart
 
-### 1. Set Up Test Workspaces
+### Full End-to-End Pipeline
 
-To initialize clean git repositories (`unguided` and `guided`) for all test cases and populate them with prompts and local guidance documentation:
+To run the complete evaluation pipeline (setup workspaces, run agent, build,
+and evaluate results) across all tests in one command:
+
+```bash
+# Run full evaluation with Jetski CLI across all test cases:
+./run_evals.py all --runner jetski-cli
+
+# Or run full evaluation for a single test case:
+./run_evals.py all --runner jetski-cli --test fractal-flames
+```
+
+---
+
+### Step-by-Step Commands
+
+#### 1. Set Up Test Workspaces
+
+To initialize clean git repositories (`unguided` and `guided`) for all test
+cases and populate them with prompts and local guidance documentation:
 
 ```bash
 ./run_evals.py setup

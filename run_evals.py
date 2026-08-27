@@ -719,6 +719,39 @@ def main() -> None:
         help="Re-generate summary_metrics.md from all existing reports",
     )
 
+    # all
+    all_p = subparsers.add_parser(
+        "all",
+        help="Run full pipeline (setup -> run -> build -> evaluate)",
+    )
+    all_p.add_argument(
+        "--runner",
+        choices=[
+            "print",
+            "agentapi",
+            "jetski-cli",
+            "jetski",
+            "gemini",
+            "claude",
+            "mock",
+        ],
+        default="jetski-cli",
+        help="Runner engine to execute (default: jetski-cli)",
+    )
+    all_p.add_argument("--test", help="Specific test name (or all by default)")
+    all_p.add_argument(
+        "--async",
+        dest="async_mode",
+        action="store_true",
+        help="Launch agent without waiting for completion",
+    )
+    all_p.add_argument(
+        "--timeout",
+        type=int,
+        default=600,
+        help="Maximum seconds to wait for agent completion (default: 600)",
+    )
+
     # status
     subparsers.add_parser("status", help="Show status of test workspaces")
 
@@ -741,6 +774,18 @@ def main() -> None:
         evaluate_tests(tests)
     elif args.command == "summarize":
         generate_summary_metrics()
+    elif args.command == "all":
+        setup_tests(tests)
+        run_agent(
+            tests,
+            args.runner,
+            async_mode=args.async_mode,
+            timeout=args.timeout,
+        )
+        if not args.async_mode:
+            build_workspaces(tests)
+            evaluate_tests(tests)
+            print_status()
     elif args.command == "status":
         print_status()
 
