@@ -228,6 +228,35 @@ def prepare_workspace(test: str, mode: str, target_dir: Path) -> str:
     return agent_prompt
 
 
+def sync_workspace_dir(src: Path, dst: Path) -> None:
+    """Sync all files and directories from src to dst, preserving symlinks."""
+    dst.mkdir(parents=True, exist_ok=True)
+    for item in src.iterdir():
+        dest = dst / item.name
+        try:
+            if item.is_dir() and not item.is_symlink():
+                if dest.exists() or dest.is_symlink():
+                    if dest.is_dir() and not dest.is_symlink():
+                        shutil.rmtree(dest)
+                    else:
+                        dest.unlink()
+                shutil.copytree(
+                    item,
+                    dest,
+                    symlinks=True,
+                    ignore_dangling_symlinks=True,
+                )
+            else:
+                if dest.exists() or dest.is_symlink():
+                    if dest.is_dir() and not dest.is_symlink():
+                        shutil.rmtree(dest)
+                    else:
+                        dest.unlink()
+                shutil.copy2(item, dest, follow_symlinks=False)
+        except OSError as e:
+            print(f"Warning: Failed to copy {item.name}: {e}")
+
+
 def create_isolated_env(temp_home: Path) -> dict[str, str]:
     """Create a sanitized environment dictionary with an isolated HOME directory."""
     temp_home.mkdir(parents=True, exist_ok=True)
@@ -256,7 +285,7 @@ def create_isolated_env(temp_home: Path) -> dict[str, str]:
 
 def wait_for_agentapi_conversation(
     conversation_id: str,
-    timeout_seconds: int = 600,
+    timeout_seconds: int = 1200,
     poll_interval: float = 2.0,
     temp_home: Path | None = None,
 ) -> bool:
@@ -405,7 +434,7 @@ def run_agent(
     runner: str,
     results_dir: Path,
     async_mode: bool = False,
-    timeout: int = 600,
+    timeout: int = 1200,
 ) -> dict[tuple[str, str], float]:
     """Run the specified agent runner across test cases in isolated /tmp workspaces."""
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -585,16 +614,7 @@ def run_agent(
                 if not async_mode:
                     duration = time.time() - step_start
                     timing_data[(test, mode)] = duration
-                    workspace.mkdir(parents=True, exist_ok=True)
-                    # Sync generated files from temp_workspace back to workspace
-                    for item in temp_workspace.iterdir():
-                        dest = workspace / item.name
-                        if item.is_dir():
-                            if dest.exists():
-                                shutil.rmtree(dest)
-                            shutil.copytree(item, dest)
-                        else:
-                            shutil.copy2(item, dest)
+                    sync_workspace_dir(temp_workspace, workspace)
                     print(
                         f"Finished {test} ({mode}) in {format_duration(duration)} "
                         f"(synced to {workspace})"
@@ -1010,8 +1030,8 @@ def main() -> None:
     run_p.add_argument(
         "--timeout",
         type=int,
-        default=600,
-        help="Maximum seconds to wait for agent completion (default: 600)",
+        default=1200,
+        help="Maximum seconds to wait for agent completion (default: 1200)",
     )
 
     # build
@@ -1083,8 +1103,8 @@ def main() -> None:
     all_p.add_argument(
         "--timeout",
         type=int,
-        default=600,
-        help="Maximum seconds to wait for agent completion (default: 600)",
+        default=1200,
+        help="Maximum seconds to wait for agent completion (default: 1200)",
     )
 
     # status
