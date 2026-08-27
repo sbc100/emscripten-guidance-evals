@@ -76,12 +76,20 @@ agent's code compiles cleanly into a modern WebAssembly ES6 module:
 
 #### 3. Evaluate Solutions & Generate Metrics
 
-Evaluate the generated `Makefile`, C++ code, and HTML/JS frontend against the
+Evaluate the generated `Makefile`, C++ code, and HTML/JS frontend using an
+LLM reviewer prompted with `evaluation/evaluation_prompt.md` against the
 4 evaluation categories (Basic Functionality & Testing, Compilation Flags,
 Separate Compilation, and JS & C++ Interoperability):
 
 ```bash
-./run_evals.py evaluate
+# Evaluate using Jetski CLI as LLM reviewer:
+./run_evals.py evaluate --runner jetski-cli
+
+# Evaluate using Agent API:
+./run_evals.py evaluate --runner agentapi
+
+# Run mock evaluation for verification:
+./run_evals.py evaluate --runner mock
 ```
 
 This generates detailed markdown reports in

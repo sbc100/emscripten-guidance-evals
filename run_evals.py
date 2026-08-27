@@ -520,10 +520,10 @@ def write_run_log(
     duration: float,
     start_time: float,
     end_time: float,
-    captured_output: str = "",
     transcript_path: Path | None = None,
+    notes: str = "",
 ) -> None:
-    """Write run.log with timing metadata, high-level LLM activity, and output."""
+    """Write run.log with timing metadata, high-level LLM activity, and notes."""
     start_dt = datetime.fromtimestamp(
         start_time, tz=timezone.utc
     ).astimezone().strftime("%Y-%m-%d %H:%M:%S")
@@ -556,14 +556,182 @@ def write_run_log(
         sections.append("\n=== Final LLM Response ===")
         sections.append(final_response)
 
-    if captured_output and captured_output.strip():
-        sections.append("\n=== Runner Console Output ===")
-        sections.append(captured_output.strip())
+    if notes and notes.strip():
+        sections.append("\n=== Notes ===")
+        sections.append(notes.strip())
 
     sections.append("")
     log_content = "\n".join(sections)
     log_file = workspace / "run.log"
     log_file.write_text(log_content, encoding="utf-8")
+
+
+def execute_runner(
+    runner: str,
+    prompt_content: str,
+    workspace: Path,
+    title: str,
+    timeout: int = 1200,
+    async_mode: bool = False,
+    home_dir: Path | None = None,
+) -> tuple[bool, Path | None, str]:
+    """Execute an agent runner command inside the given workspace."""
+    env = create_isolated_env(home_dir) if home_dir else os.environ.copy()
+    transcript_path: Path | None = None
+    notes = ""
+
+    if runner == "print":
+        print(f"Target directory: {workspace}")
+        print(f"Prompt:\n{prompt_content[:300]}...\n")
+        return True, None, "Print only run."
+
+    if runner == "agentapi":
+        agentapi_bin = shutil.which("agentapi")
+        if not agentapi_bin:
+            default_path = (
+                Path.home() / ".gemini" / "jetski" / "bin" / "agentapi"
+            )
+            if default_path.exists():
+                agentapi_bin = str(default_path)
+        if not agentapi_bin:
+            err = (
+                "Error: 'agentapi' CLI not found in PATH or "
+                "~/.gemini/jetski/bin/agentapi.\n"
+                "Please ensure Jetski is installed or add "
+                "~/.gemini/jetski/bin to PATH."
+            )
+            print(err)
+            return False, None, err
+
+        cmd = [
+            agentapi_bin,
+            "new-conversation",
+            f"--title={title}",
+            prompt_content,
+        ]
+        print(f"Executing: {' '.join(cmd[:3])} '<prompt>' in {workspace}")
+        res = subprocess.run(
+            cmd,
+            cwd=workspace,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        if res.returncode != 0:
+            err = f"Error starting conversation: {res.stderr}"
+            print(err)
+            return False, None, err
+
+        conversation_id = None
+        try:
+            data = json.loads(res.stdout)
+            conversation_id = (
+                data.get("response", {})
+                .get("newConversation", {})
+                .get("conversationId")
+            )
+        except (json.JSONDecodeError, AttributeError):
+            match = re.search(r'"conversationId":\s*"([^"]+)"', res.stdout)
+            if match:
+                conversation_id = match.group(1)
+
+        if not conversation_id:
+            err = f"Failed to extract conversationId from output:\n{res.stdout}"
+            print(err)
+            return False, None, err
+
+        print(f"Started conversation: {conversation_id}")
+        if not async_mode:
+            wait_for_agentapi_conversation(
+                conversation_id,
+                timeout_seconds=timeout,
+                temp_home=home_dir,
+            )
+            search_home = home_dir or Path.home()
+            cand = (
+                search_home
+                / ".gemini"
+                / "jetski"
+                / "brain"
+                / conversation_id
+                / ".system_generated"
+                / "logs"
+                / "transcript.jsonl"
+            )
+            if cand.exists():
+                transcript_path = cand
+        return True, transcript_path, notes
+
+    elif runner in ("jetski-cli", "jetski"):
+        jetski_bin = shutil.which("jetski-cli") or shutil.which("jetski")
+        if not jetski_bin:
+            release_path = Path("/google/bin/releases/jetski-devs/tools/cli")
+            if release_path.exists():
+                jetski_bin = str(release_path)
+            else:
+                default_path = (
+                    Path.home() / ".gemini" / "jetski" / "bin" / "jetski"
+                )
+                if default_path.exists():
+                    jetski_bin = str(default_path)
+        if not jetski_bin:
+            err = (
+                "Error: Jetski CLI not found in PATH or "
+                "/google/bin/releases/jetski-devs/tools/cli.\n"
+                "Please ensure Jetski CLI is installed."
+            )
+            print(err)
+            return False, None, err
+
+        timeout_str = f"{timeout}s"
+        cmd = [
+            jetski_bin,
+            "--new-project",
+            "--dangerously-skip-permissions",
+            f"--print-timeout={timeout_str}",
+            "-p",
+            prompt_content,
+        ]
+        if home_dir:
+            cmd.insert(1, "--isolated_env")
+
+        print(f"Executing Jetski CLI in {workspace}...")
+        subprocess.run(cmd, cwd=workspace, env=env, check=False)
+
+        search_home = home_dir or Path.home()
+        transcripts = list(
+            search_home.glob(
+                ".gemini/jetski/brain/*/.system_generated/logs/transcript.jsonl"
+            )
+        )
+        if transcripts:
+            transcript_path = max(transcripts, key=lambda p: p.stat().st_mtime)
+        return True, transcript_path, notes
+
+    elif runner in ("gemini", "claude"):
+        cmd = [runner, "-p", prompt_content]
+        print(f"Executing {runner} CLI in {workspace}")
+        res = subprocess.run(
+            cmd,
+            cwd=workspace,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.stdout:
+            notes = res.stdout
+        return True, None, notes
+
+    elif runner == "mock":
+        return True, None, notes
+
+    else:
+        err = f"Unknown runner: {runner}"
+        print(err)
+        return False, None, err
 
 
 def run_agent(
@@ -610,203 +778,32 @@ def run_agent(
                 # Prepare test workspace directly in /tmp
                 prompt_content = prepare_workspace(test, mode, temp_workspace)
 
-                captured_lines = []
-                transcript_path = None
-
-                if runner == "print":
-                    print(f"Target directory: {workspace}")
-                    print(f"Prompt:\n{prompt_content[:300]}...\n")
-                    continue
-
-                env = create_isolated_env(temp_home)
                 print(f"Isolated workspace: {temp_workspace}")
                 print(f"Isolated HOME: {temp_home}")
 
-                if runner == "agentapi":
-                    agentapi_bin = shutil.which("agentapi")
-                    if not agentapi_bin:
-                        default_path = (
-                            Path.home()
-                            / ".gemini"
-                            / "jetski"
-                            / "bin"
-                            / "agentapi"
-                        )
-                        if default_path.exists():
-                            agentapi_bin = str(default_path)
-                    if not agentapi_bin:
-                        print(
-                            "Error: 'agentapi' CLI not found in PATH or "
-                            "~/.gemini/jetski/bin/agentapi.\n"
-                            "Please ensure Jetski is installed or add "
-                            "~/.gemini/jetski/bin to PATH."
-                        )
-                        continue
-
-                    cmd = [
-                        agentapi_bin,
-                        "new-conversation",
-                        f"--title={test} ({mode})",
-                        prompt_content,
-                    ]
-                    print(
-                        f"Executing: {' '.join(cmd[:3])} '<prompt>' in {temp_workspace}"
-                    )
-                    res = subprocess.run(
-                        cmd,
-                        cwd=temp_workspace,
-                        env=env,
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                    )
-                    if res.stdout:
-                        captured_lines.append(res.stdout)
-                    if res.stderr:
-                        captured_lines.append(res.stderr)
-
-                    if res.returncode != 0:
-                        print(f"Error starting conversation: {res.stderr}")
-                        continue
-
-                    conversation_id = None
-                    try:
-                        data = json.loads(res.stdout)
-                        conversation_id = (
-                            data.get("response", {})
-                            .get("newConversation", {})
-                            .get("conversationId")
-                        )
-                    except (json.JSONDecodeError, AttributeError):
-                        match = re.search(
-                            r'"conversationId":\s*"([^"]+)"', res.stdout
-                        )
-                        if match:
-                            conversation_id = match.group(1)
-
-                    if not conversation_id:
-                        print(
-                            f"Failed to extract conversationId from output:\n"
-                            f"{res.stdout}"
-                        )
-                        continue
-
-                    print(f"Started conversation: {conversation_id}")
-                    if not async_mode:
-                        wait_for_agentapi_conversation(
-                            conversation_id,
-                            timeout_seconds=timeout,
-                            temp_home=temp_home,
-                        )
-                        cand = (
-                            temp_home
-                            / ".gemini"
-                            / "jetski"
-                            / "brain"
-                            / conversation_id
-                            / ".system_generated"
-                            / "logs"
-                            / "transcript.jsonl"
-                        )
-                        if cand.exists():
-                            transcript_path = cand
-                elif runner in ("jetski-cli", "jetski"):
-                    jetski_bin = shutil.which("jetski-cli") or shutil.which(
-                        "jetski"
-                    )
-                    if not jetski_bin:
-                        release_path = Path(
-                            "/google/bin/releases/jetski-devs/tools/cli"
-                        )
-                        if release_path.exists():
-                            jetski_bin = str(release_path)
-                        else:
-                            default_path = (
-                                Path.home()
-                                / ".gemini"
-                                / "jetski"
-                                / "bin"
-                                / "jetski"
-                            )
-                            if default_path.exists():
-                                jetski_bin = str(default_path)
-                    if not jetski_bin:
-                        print(
-                            "Error: Jetski CLI not found in PATH or "
-                            "/google/bin/releases/jetski-devs/tools/cli.\n"
-                            "Please ensure Jetski CLI is installed."
-                        )
-                        continue
-
-                    timeout_str = f"{timeout}s"
-                    cmd = [
-                        jetski_bin,
-                        "--isolated_env",
-                        "--new-project",
-                        "--dangerously-skip-permissions",
-                        f"--print-timeout={timeout_str}",
-                        "-p",
-                        prompt_content,
-                    ]
-                    print(f"Executing Jetski CLI in {temp_workspace}...")
-                    proc = subprocess.Popen(
-                        cmd,
-                        cwd=temp_workspace,
-                        env=env,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        bufsize=1,
-                    )
-                    if proc.stdout:
-                        for line in proc.stdout:
-                            print(line, end="", flush=True)
-                            captured_lines.append(line)
-                    proc.wait()
-
-                    transcripts = list(
-                        temp_home.glob(
-                            ".gemini/jetski/brain/*/.system_generated/logs/transcript.jsonl"
-                        )
-                    )
-                    if transcripts:
-                        transcript_path = max(
-                            transcripts, key=lambda p: p.stat().st_mtime
-                        )
-                elif runner in ("gemini", "claude"):
-                    cmd = [runner, "-p", prompt_content]
-                    print(f"Executing {runner} CLI in {temp_workspace}")
-                    proc = subprocess.Popen(
-                        cmd,
-                        cwd=temp_workspace,
-                        env=env,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        bufsize=1,
-                    )
-                    if proc.stdout:
-                        for line in proc.stdout:
-                            print(line, end="", flush=True)
-                            captured_lines.append(line)
-                    proc.wait()
-                elif runner == "mock":
+                if runner == "mock":
                     print(
                         f"Generating mock baseline solution for {test} ({mode})..."
                     )
                     generate_mock_solution(temp_workspace, mode, test)
-                    captured_lines.append(
-                        f"Generated mock baseline solution for {test} ({mode}).\n"
-                    )
+                    success = True
+                    transcript_path = None
+                    notes = f"Generated mock baseline solution for {test} ({mode})."
                 else:
-                    print(f"Unknown runner: {runner}")
-                    continue
+                    success, transcript_path, notes = execute_runner(
+                        runner=runner,
+                        prompt_content=prompt_content,
+                        workspace=temp_workspace,
+                        home_dir=temp_home,
+                        title=f"{test} ({mode})",
+                        timeout=timeout,
+                        async_mode=async_mode,
+                    )
 
-                if not async_mode:
+                if not async_mode and success:
                     end_time = time.time()
                     duration = end_time - step_start
                     timing_data[(test, mode)] = duration
-                    captured_output = "".join(captured_lines)
                     write_run_log(
                         workspace=temp_workspace,
                         test=test,
@@ -815,15 +812,15 @@ def run_agent(
                         duration=duration,
                         start_time=step_start,
                         end_time=end_time,
-                        captured_output=captured_output,
                         transcript_path=transcript_path,
+                        notes=notes,
                     )
                     sync_workspace_dir(temp_workspace, workspace)
                     print(
                         f"Finished {test} ({mode}) in {format_duration(duration)} "
                         f"(synced to {workspace})"
                     )
-                else:
+                elif async_mode:
                     print(
                         f"Async run launched in {temp_workspace}. "
                         f"Artifacts will remain at {temp_dir_path} until synced."
@@ -972,137 +969,249 @@ def build_workspaces(tests: list[str], results_dir: Path) -> None:
             print(f"  Build outcome: {status} (log: {log_file})")
 
 
-def evaluate_tests(tests: list[str], results_dir: Path) -> None:
-    """Evaluate and grade the generated solutions against best practices."""
-    for test in tests:
-        scores = {}
-        analysis_notes = {}
+def extract_evaluation_report(text: str) -> str | None:
+    """Extract evaluation report markdown from agent response or raw text."""
+    if not text:
+        return None
+    # Remove outer markdown code fence if present
+    match = re.search(
+        r"```(?:markdown)?\s*(# Evaluation Report.*?)```",
+        text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if match:
+        return match.group(1).strip()
+    if "# Evaluation Report" in text:
+        idx = text.find("# Evaluation Report")
+        return text[idx:].strip()
+    return None
 
-        for mode in ["unguided", "guided"]:
-            workspace = results_dir / test / mode
-            if not workspace.exists() or not (workspace / "Makefile").exists():
-                scores[mode] = 0
-                analysis_notes[mode] = "Workspace or Makefile missing."
-                continue
 
-            makefile = (workspace / "Makefile").read_text(encoding="utf-8")
-            cpp = ""
-            for p in workspace.glob("*.cpp"):
-                cpp += p.read_text(encoding="utf-8")
-            html = ""
-            for p in workspace.glob("*.html"):
-                html += p.read_text(encoding="utf-8")
-
-            score = 0
-            notes = []
-
-            # Category 1: Basic Functionality & Testing (25 pts)
-            cat1 = 0
-            if (workspace / "module.wasm").exists() or list(
-                workspace.glob("*.wasm")
-            ):
-                cat1 += 10
-            if (workspace / "index.html").exists() and len(
-                (workspace / "index.html").read_text(encoding="utf-8")
-            ) > 100:
-                cat1 += 10
-            if (workspace / "module.mjs").exists() or list(
-                workspace.glob("*.mjs")
-            ):
-                cat1 += 5
-            score += min(cat1, 25)
-            notes.append(f"Basic Functionality & Testing: {cat1}/25")
-
-            # Category 2: Compilation Flags (25 pts)
-            cat2 = 0
-            if "-sSTRICT" in makefile and "-sSTRICT=1" not in makefile:
-                cat2 += 8
-            if "-sEXPORT_ES6" in makefile and "-sEXPORT_ES6=1" not in makefile:
-                cat2 += 8
-            if "-Werror" in makefile and "-Wall" in makefile:
-                cat2 += 5
-            if (
-                "-sWASM=1" not in makefile
-                and "-sUSE_PTHREADS=1" not in makefile
-            ):
-                cat2 += 4
-            score += min(cat2, 25)
-            notes.append(f"Compilation Flags: {cat2}/25")
-
-            # Category 3: Separate Compilation (25 pts)
-            cat3 = 0
-            if "-c " in makefile and (
-                "%.o: %.cpp" in makefile or ".o" in makefile
-            ):
-                cat3 += 15
-            if "-flto" in makefile or "-O3" in makefile or "-Oz" in makefile:
-                cat3 += 10
-            score += min(cat3, 25)
-            notes.append(f"Separate Compilation: {cat3}/25")
-
-            # Category 4: JS & C++ Interop (Embind) & Web Standards (25 pts)
-            cat4 = 0
-            if "--bind" in makefile and "EMSCRIPTEN_BINDINGS" in cpp:
-                cat4 += 15
-            elif "extern " in cpp or "EXPORTED_FUNCTIONS" in makefile:
-                cat4 += 5
-            if 'type="module"' in html or "import Module" in html:
-                cat4 += 10
-            score += min(cat4, 25)
-            notes.append(f"JS & C++ Interop: {cat4}/25")
-
-            scores[mode] = score
-            analysis_notes[mode] = "; ".join(notes)
-
-        unguided_score = scores.get("unguided", 0)
-        guided_score = scores.get("guided", 0)
-        uplift = guided_score - unguided_score
-
-        # Read execution times from run.log if available
-        unguided_log = results_dir / test / "unguided" / "run.log"
-        guided_log = results_dir / test / "guided" / "run.log"
-        unguided_time = "N/A"
-        guided_time = "N/A"
-
-        if unguided_log.exists():
-            for line in unguided_log.read_text(encoding="utf-8").splitlines():
-                if line.startswith("Execution Time:"):
-                    unguided_time = line.split("Execution Time:")[1].strip()
-                    break
-
-        if guided_log.exists():
-            for line in guided_log.read_text(encoding="utf-8").splitlines():
-                if line.startswith("Execution Time:"):
-                    guided_time = line.split("Execution Time:")[1].strip()
-                    break
-
-        report_path = results_dir / test / "evaluation_report.md"
-        report_content = f"""# Evaluation Report: {test}
+def generate_mock_evaluation_report(
+    target_file: Path,
+    test: str,
+    unguided_time: str = "N/A",
+    guided_time: str = "N/A",
+) -> None:
+    """Generate a sample mock evaluation report following the rubric format."""
+    report_content = f"""# Evaluation Report: {test}
 
 ## Executive Summary
-- **Unguided Score:** {unguided_score} / 100
-- **Guided Score:** {guided_score} / 100
-- **Uplift (+pp):** {uplift:+d} points
+- **Unguided Score:** 64 / 100
+- **Guided Score:** 100 / 100
+- **Uplift (+pp):** +36 points
 - **Unguided Time:** {unguided_time}
 - **Guided Time:** {guided_time}
 
-## Detailed Notes
-### Unguided Run
-- **Score:** {unguided_score}/100
-- **Execution Time:** {unguided_time}
-- **Notes:** {analysis_notes.get('unguided', 'N/A')}
+## Detailed Comparison
 
-### Guided Run
-- **Score:** {guided_score}/100
-- **Execution Time:** {guided_time}
-- **Notes:** {analysis_notes.get('guided', 'N/A')}
+| Category | Unguided Score | Guided Score | Key Differences |
+| :--- | :--- | :--- | :--- |
+| 1. Basic Functionality & Testing | 25 / 25 | 25 / 25 | Both workspaces produce valid WebAssembly builds. |
+| 2. Compilation Flags & Best Practices | 4 / 25 | 25 / 25 | Guided uses clean `-sSTRICT`, `-sEXPORT_ES6`, and `-Werror -Wall`; unguided uses legacy `=1` flags. |
+| 3. Separate Compilation Workflow | 10 / 25 | 25 / 25 | Guided separates `.o` compilation from linking with matching optimization flags. |
+| 4. JS & C++ Interoperability | 25 / 25 | 25 / 25 | Guided uses clean Embind bindings and ES6 module import. |
+| **Total Score** | **64 / 100** | **100 / 100** | **+36 uplift** |
+
+## Analysis of Unguided Run
+The unguided run successfully generates working C++ code and compiles to WebAssembly, but relies on legacy compiler flags (e.g. `-sWASM=1`, `-sUSE_PTHREADS=1`) and compiles in a single pass without separate compilation rules in the Makefile.
+
+## Analysis of Guided Run
+The guided run follows `best_practices.rst` strictly. The Makefile defines clean separate compilation rules (`%.o: %.cpp`), passes `-sSTRICT` and `-sEXPORT_ES6` without `=1` suffixes, and enables `-Wall -Werror`. JS and C++ interop uses Embind cleanly with ES6 module loading.
+
+## Recommendations & Takeaways
+Providing the Emscripten best practices guidance resulted in a 36-point score increase, eliminating deprecated compiler flags and adopting modern separate compilation workflows.
 """
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(report_content, encoding="utf-8")
-        print(f"Wrote evaluation report: {report_path}")
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_text(report_content, encoding="utf-8")
+
+
+def prepare_evaluator_prompt(
+    test: str,
+    test_dir: Path,
+) -> tuple[str, str, str]:
+    """Write evaluator_prompt.md in test_dir referencing unguided/guided solutions."""
+    unguided_src = test_dir / "unguided"
+    guided_src = test_dir / "guided"
+
+    unguided_time = "N/A"
+    guided_time = "N/A"
+    unguided_log = unguided_src / "run.log"
+    guided_log = guided_src / "run.log"
+
+    if unguided_log.exists():
+        for line in unguided_log.read_text(encoding="utf-8").splitlines():
+            if line.startswith("Execution Time:"):
+                unguided_time = line.split("Execution Time:")[1].strip()
+                break
+
+    if guided_log.exists():
+        for line in guided_log.read_text(encoding="utf-8").splitlines():
+            if line.startswith("Execution Time:"):
+                guided_time = line.split("Execution Time:")[1].strip()
+                break
+
+    eval_prompt_file = EVALUATION_DIR / "evaluation_prompt.md"
+    rubric_text = (
+        eval_prompt_file.read_text(encoding="utf-8")
+        if eval_prompt_file.exists()
+        else ""
+    )
+
+    test_prompt_file = TESTS_DIR / test / "prompt.md"
+    test_prompt_text = (
+        test_prompt_file.read_text(encoding="utf-8")
+        if test_prompt_file.exists()
+        else ""
+    )
+
+    guidance_path = GUIDANCE_DIR.resolve()
+
+    evaluator_prompt = f"""# Code Review & Evaluation Task: {test}
+
+You are evaluating an AI coding agent benchmark for Emscripten/WebAssembly best practices.
+
+## Test Task Requirements
+{test_prompt_text}
+
+## Submission Locations
+- **Unguided Submission**: `./unguided/` (Execution Time: {unguided_time})
+- **Guided Submission**: `./guided/` (Execution Time: {guided_time})
+- **Emscripten Best Practices Guidance**: `{guidance_path}/best_practices.rst` and `{guidance_path}/cpp-on-the-web/guide.md`
+
+## Evaluation Instructions & Rubric
+{rubric_text}
+
+## Output Deliverable
+Write your complete, structured evaluation report to `./evaluation_report.md` matching the requested Markdown report format, including the exact scores for each category and executive summary.
+Ensure the executive summary includes:
+- **Unguided Score:** <X> / 100
+- **Guided Score:** <Y> / 100
+- **Uplift (+pp):** <+Z or -Z> points
+- **Unguided Time:** {unguided_time}
+- **Guided Time:** {guided_time}
+"""
+
+    (test_dir / "evaluator_prompt.md").write_text(
+        evaluator_prompt, encoding="utf-8"
+    )
+    return evaluator_prompt, unguided_time, guided_time
+
+
+def print_eval_timing_summary(
+    timing_data: dict[str, float],
+    total_elapsed: float,
+) -> None:
+    """Print evaluation execution timing breakdown and total elapsed time."""
+    if not timing_data:
+        print(f"\nTotal elapsed time: {format_duration(total_elapsed)}")
+        return
+
+    rows: list[tuple[str, str]] = []
+    for test, dur in timing_data.items():
+        rows.append((test, format_duration(dur)))
+
+    headers = ("Test Case", "Evaluation Time")
+    col_widths = [
+        max(len(headers[i]), *(len(row[i]) for row in rows))
+        for i in range(len(headers))
+    ]
+
+    header_line = " | ".join(
+        f"{h:<{w}}" if i < len(headers) - 1 else h
+        for i, (h, w) in enumerate(zip(headers, col_widths, strict=True))
+    )
+    divider = "-" * len(header_line)
+
+    print("\n=== Evaluation Timing ===")
+    print(header_line)
+    print(divider)
+    for row in rows:
+        line = " | ".join(
+            f"{val:<{w}}" if i < len(row) - 1 else val
+            for i, (val, w) in enumerate(zip(row, col_widths, strict=True))
+        )
+        print(line)
+    print(divider)
+    print(f"Total evaluate time: {format_duration(total_elapsed)}")
+
+
+def evaluate_tests(
+    tests: list[str],
+    results_dir: Path,
+    runner: str = "jetski-cli",
+    async_mode: bool = False,
+    timeout: int = 1200,
+) -> dict[str, float]:
+    """Evaluate and grade generated solutions using an LLM reviewer based on evaluation_prompt.md."""
+    timing_data: dict[str, float] = {}
+
+    for test in tests:
+        step_start = time.time()
+        test_dir = results_dir / test
+        if not test_dir.exists():
+            print(f"Skipping {test}: results directory not found at {test_dir}")
+            continue
+
+        print(
+            f"\n--- Evaluating [{runner}] on {test} [{results_dir.name}] ---"
+        )
+        evaluator_prompt, unguided_time, guided_time = (
+            prepare_evaluator_prompt(test, test_dir)
+        )
+
+        if runner == "mock":
+            print(f"Generating mock evaluation report for {test}...")
+            generate_mock_evaluation_report(
+                test_dir / "evaluation_report.md",
+                test,
+                unguided_time=unguided_time,
+                guided_time=guided_time,
+            )
+            success = True
+            transcript_path = None
+            notes = "Generated mock evaluation report."
+        else:
+            success, transcript_path, notes = execute_runner(
+                runner=runner,
+                prompt_content=evaluator_prompt,
+                workspace=test_dir,
+                title=f"Evaluation: {test}",
+                timeout=timeout,
+                async_mode=async_mode,
+                home_dir=None,
+            )
+
+        if not async_mode and success:
+            report_file = test_dir / "evaluation_report.md"
+            if not report_file.exists():
+                extracted = None
+                if transcript_path and transcript_path.exists():
+                    _, final_resp = summarize_transcript(transcript_path)
+                    extracted = extract_evaluation_report(final_resp)
+                if not extracted and notes:
+                    extracted = extract_evaluation_report(notes)
+                if extracted:
+                    report_file.write_text(extracted, encoding="utf-8")
+
+            if report_file.exists():
+                print(f"Wrote evaluation report: {report_file}")
+            elif runner != "print":
+                print(
+                    f"Warning: evaluation_report.md was not found in {test_dir}"
+                )
+
+            duration = time.time() - step_start
+            timing_data[test] = duration
+            print(
+                f"Finished evaluation of {test} in {format_duration(duration)}"
+            )
+        elif async_mode:
+            print(f"Async evaluation launched in {test_dir}.")
 
     generate_summary_metrics(results_dir)
     generate_index_html(results_dir)
+    return timing_data
 
 
 def generate_summary_metrics(results_dir: Path) -> None:
@@ -1115,25 +1224,43 @@ def generate_summary_metrics(results_dir: Path) -> None:
         if not report_path.exists():
             continue
 
-        lines = report_path.read_text(encoding="utf-8").splitlines()
+        full_text = report_path.read_text(encoding="utf-8")
         unguided_score = None
         guided_score = None
         unguided_time = None
         guided_time = None
 
-        for line in lines:
-            if "Unguided Score:" in line:
-                m = re.search(r"(\d+)\s*/\s*100", line)
-                if m:
-                    unguided_score = int(m.group(1))
-            elif "Guided Score:" in line:
-                m = re.search(r"(\d+)\s*/\s*100", line)
-                if m:
-                    guided_score = int(m.group(1))
-            elif line.startswith("- **Unguided Time:**"):
-                unguided_time = line.split("Unguided Time:**")[1].strip()
-            elif line.startswith("- **Guided Time:**"):
-                guided_time = line.split("Guided Time:**")[1].strip()
+        m_u = re.search(
+            r"\b(?:Unguided Score|Unguided Total)[\s\*:]+(\d+)\s*(?:/\s*100)?",
+            full_text,
+            re.IGNORECASE,
+        )
+        if m_u:
+            unguided_score = int(m_u.group(1))
+
+        m_g = re.search(
+            r"\b(?:Guided Score|Guided Total)[\s\*:]+(\d+)\s*(?:/\s*100)?",
+            full_text,
+            re.IGNORECASE,
+        )
+        if m_g:
+            guided_score = int(m_g.group(1))
+
+        m_ut = re.search(
+            r"\b(?:Unguided Time)[\s\*:]+([^\n\r]+)",
+            full_text,
+            re.IGNORECASE,
+        )
+        if m_ut:
+            unguided_time = m_ut.group(1).strip().strip("*").strip()
+
+        m_gt = re.search(
+            r"\b(?:Guided Time)[\s\*:]+([^\n\r]+)",
+            full_text,
+            re.IGNORECASE,
+        )
+        if m_gt:
+            guided_time = m_gt.group(1).strip().strip("*").strip()
 
         if unguided_score is not None and guided_score is not None:
             uplift = guided_score - unguided_score
@@ -1235,17 +1362,14 @@ def print_status(results_dir: Path | None = None) -> None:
                 score = "N/A"
                 report = rdir / test / "evaluation_report.md"
                 if report.exists():
-                    lines = report.read_text(encoding="utf-8").splitlines()
-                    for line in lines:
-                        if f"{mode.capitalize()} Score:" in line:
-                            score = (
-                                line.split("Score:")[1]
-                                .split("/")[0]
-                                .replace("*", "")
-                                .strip()
-                                + "/100"
-                            )
-                            break
+                    txt = report.read_text(encoding="utf-8")
+                    m_score = re.search(
+                        rf"\b{mode}\s*Score[\s\*:]+(\d+)",
+                        txt,
+                        re.IGNORECASE,
+                    )
+                    if m_score:
+                        score = f"{m_score.group(1)}/100"
 
                 print(
                     f"{test:<20} | {mode:<10} | "
@@ -1309,13 +1433,39 @@ def main() -> None:
 
     # evaluate
     eval_p = subparsers.add_parser(
-        "evaluate", help="Evaluate and score outputs"
+        "evaluate", help="Evaluate and score outputs with LLM reviewer"
+    )
+    eval_p.add_argument(
+        "--runner",
+        choices=[
+            "print",
+            "agentapi",
+            "jetski-cli",
+            "jetski",
+            "gemini",
+            "claude",
+            "mock",
+        ],
+        default="jetski-cli",
+        help="Runner engine to execute evaluation (default: jetski-cli)",
     )
     eval_p.add_argument("--test", help="Specific test name")
     eval_p.add_argument(
         "-d",
         "--results-dir",
         help="Target results directory (default: latest results directory)",
+    )
+    eval_p.add_argument(
+        "--async",
+        dest="async_mode",
+        action="store_true",
+        help="Launch evaluation agent without waiting for completion",
+    )
+    eval_p.add_argument(
+        "--timeout",
+        type=int,
+        default=1200,
+        help="Maximum seconds to wait for evaluation completion (default: 1200)",
     )
 
     # summarize
@@ -1404,9 +1554,16 @@ def main() -> None:
         print(f"\nTotal build time: {format_duration(total_elapsed)}")
     elif args.command == "evaluate":
         target_dir = resolve_results_dir(args.results_dir, default_to_new=False)
-        evaluate_tests(tests, target_dir)
-        total_elapsed = time.time() - start_time
-        print(f"\nTotal evaluate time: {format_duration(total_elapsed)}")
+        timing_data = evaluate_tests(
+            tests,
+            target_dir,
+            runner=args.runner,
+            async_mode=args.async_mode,
+            timeout=args.timeout,
+        )
+        if not args.async_mode:
+            total_elapsed = time.time() - start_time
+            print_eval_timing_summary(timing_data, total_elapsed)
     elif args.command == "summarize":
         target_dir = resolve_results_dir(args.results_dir, default_to_new=False)
         generate_summary_metrics(target_dir)
@@ -1426,10 +1583,17 @@ def main() -> None:
         )
         if not args.async_mode:
             build_workspaces(tests, target_dir)
-            evaluate_tests(tests, target_dir)
+            eval_timing = evaluate_tests(
+                tests,
+                target_dir,
+                runner=args.runner,
+                async_mode=args.async_mode,
+                timeout=args.timeout,
+            )
             print_status(target_dir)
             total_elapsed = time.time() - start_time
             print_timing_summary(timing_data, total_elapsed)
+            print_eval_timing_summary(eval_timing, total_elapsed)
     elif args.command == "status":
         target_dir = (
             resolve_results_dir(args.results_dir, default_to_new=False)
