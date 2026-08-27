@@ -1149,6 +1149,7 @@ You are evaluating an AI coding agent benchmark for Emscripten/WebAssembly best 
 - **Unguided Submission**: `./unguided/` (Execution Time: {unguided_time})
 - **Guided Submission**: `./guided/` (Execution Time: {guided_time})
 - **Emscripten Best Practices Guidance**: `{guidance_path}/best_practices.rst` and `{guidance_path}/cpp-on-the-web/guide.md`
+- **Important:** Treat `./unguided/` and `./guided/` as **read-only**. Do not run `make`, `make clean`, or `emcc` to rebuild; inspect existing `build.log` and compiled files directly.
 
 ## Evaluation Instructions & Rubric
 {rubric_text}
@@ -1281,7 +1282,6 @@ def evaluate_tests(
             print(f"Async evaluation launched in {test_dir}.")
 
     generate_summary_metrics(results_dir)
-    generate_index_html(results_dir)
     return timing_data
 
 

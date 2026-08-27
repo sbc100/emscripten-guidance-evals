@@ -10,28 +10,34 @@ You have access to the official Emscripten Best Practices documentation
 
 Evaluate the AI agent's generated code (including the `Makefile`, C++ source
 files like `main.cpp` or `.cpp` modules, HTML/JS frontend like `index.html` or
-`module.mjs`) located in the target workspace.
+`module.mjs`, and build logs) located in the target workspace.
+
+**Important: Read-Only Evaluation**
+- Do **not** run `make`, `make clean`, `emcc`, or attempt to rebuild any code.
+- The build verification step has already run independently; build logs
+  (`build.log`), object files (`.o`), and compiled artifacts (`module.mjs`,
+  `module.wasm`) are already present in `./unguided/` and `./guided/`.
+- Treat the entire results directory as **read-only** (only write your final
+  `./evaluation_report.md`).
 
 For both the **unguided** run (`results/<test_name>/unguided`) and the
-**guided** run (`results/<test_name>/guided`), inspect and test the generated
-files and score them on the following 4 categories (25 points each, total 100
-points per run):
+**guided** run (`results/<test_name>/guided`), inspect the generated files and
+score them on the following 4 categories (25 points each, total 100 points per
+run):
 
 ### Category 1: Basic Functionality & Testing (0 - 25 points)
-- **Does the web application actually work?** Does it load and run in the
-  browser / Node.js environment without runtime errors or crashes?
-- **Actual testing of inputs/outputs/results:** Perform simple direct testing
-  of the application's core functionality with realistic test inputs (you can
-  use Chrome headless or Puppeteer to launch the browser and run tests):
-  - Feed sample inputs (e.g. data buffers, audio parameters, sample images, or
-    test payloads) and verify that valid, non-trivial, and correct output results
-    are produced.
-  - Verify that edge cases or typical user actions (e.g. clicking buttons,
-    adjusting sliders, uploading files, running processing passes) execute
-    without JavaScript console errors or WebAssembly runtime traps.
-  - Run any included automated verification / test scripts, or use Chrome
-    headless / Puppeteer to drive and inspect the web application in a browser
-    session.
+- **Build Status & Verification:** Inspect `build.log` in each directory to
+  verify whether the code compiled cleanly without fatal compilation errors.
+- **Does the application work?** Check that necessary WebAssembly and JavaScript
+  artifacts (`module.mjs`, `module.wasm`, `index.html`) were generated and are
+  structurally complete.
+- **Code inspection & logic correctness:** Inspect the C++, JavaScript, and HTML
+  source files to confirm algorithms, DSP/graphics logic, parameter handling,
+  and UI event listeners are correctly implemented according to the prompt.
+- **Testing pre-built artifacts (read-only):** If running automated checks
+  (e.g., executing existing test scripts via `node` or launching headless
+  Chrome to load `index.html`), do so strictly in read-only mode without
+  modifying workspace files or recompiling.
 - **Requirements fulfillment:** Does the implementation satisfy all functional
   requirements outlined in the test prompt?
 
@@ -50,11 +56,11 @@ points per run):
 
 ### Category 3: Separate Compilation Workflow (0 - 25 points)
 - Does `Makefile` cleanly separate compilation (`.cpp` -> `.o`) from linking
-  (`.o` -> `.mjs`)?
+  (`.o` -> `.mjs`)? Inspect Makefile syntax statically without running `make`.
 - Are critical flags (such as `-flto`, `-O3`/`-Oz`, `-g`, `-pthread`,
   `-Werror -Wall`) passed at **both** compile time and link time?
-- Does `make clean` properly clean target artifacts including `.o`, `.mjs`,
-  `.wasm`, and `.map` files?
+- Does `make clean` target properly specify target artifacts including `.o`,
+  `.mjs`, `.wasm`, and `.map` files (verify via static inspection)?
 
 ### Category 4: JavaScript & C++ Interoperability (0 - 25 points)
 - Is **Embind** (`--bind` and `EMSCRIPTEN_BINDINGS`) used instead of raw

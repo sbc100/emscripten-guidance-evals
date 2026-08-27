@@ -2,7 +2,7 @@
 
 | Test Case        | Unguided Score | Guided Score | Uplift (+pp) |
 | :--------------- | :------------: | :----------: | :----------: |
-| audio-processor  |       54       |     100      |     +46      |
-| file-compressor  |       64       |     100      |     +36      |
-| fractal-flames   |      100       |      95      |      -5      |
-| image-transcoder |       54       |     100      |     +46      |
+| audio-processor  |       44       |     100      |     +56      |
+| file-compressor  |       67       |     100      |     +33      |
+| fractal-flames   |       99       |      71      |     -28      |
+| image-transcoder |       58       |      74      |     +16      |
