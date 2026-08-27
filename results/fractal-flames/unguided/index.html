@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FLAM3 Fractal Flame Generator (WebAssembly)</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="brand">
+            <span class="brand-icon">🔥</span>
+            <span class="brand-title">FLAM3 Fractal Flame Studio</span>
+            <span class="brand-badge" id="engineStatus">WASM Initializing...</span>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-cyan" id="btnRandomTop">✨ Random Flame</button>
+            <button class="btn btn-purple" id="btnMutateTop">🧬 Mutate</button>
+            <button class="btn btn-primary" id="btnRenderToggle">▶ Render</button>
+            <button class="btn" id="btnExportPng">💾 Export PNG</button>
+        </div>
+    </header>
+
+    <div class="app-container">
+        <!-- Sidebar Controls -->
+        <aside class="sidebar">
+            <nav class="sidebar-tabs">
+                <button class="tab-btn active" data-tab="presets-tab">Presets</button>
+                <button class="tab-btn" data-tab="camera-tab">Camera</button>
+                <button class="tab-btn" data-tab="color-tab">Color & Tone</button>
+                <button class="tab-btn" data-tab="xforms-tab">Transforms</button>
+                <button class="tab-btn" data-tab="render-tab">Render</button>
+            </nav>
+
+            <div class="sidebar-content">
+                <!-- Presets Tab -->
+                <div class="tab-pane active" id="presets-tab">
+                    <div class="control-card">
+                        <div class="card-title">Curated Presets</div>
+                        <div class="control-row">
+                            <label for="presetSelect">Select Preset</label>
+                            <select id="presetSelect"></select>
+                        </div>
+                        <div class="btn-grid">
+                            <button class="btn btn-cyan" id="btnRandom">✨ Random Flame</button>
+                            <button class="btn btn-purple" id="btnMutate">🧬 Mutate Current</button>
+                        </div>
+                    </div>
+
+                    <div class="control-card">
+                        <div class="card-title">Randomizer Settings</div>
+                        <div class="control-row">
+                            <label for="randNumXforms">Transforms Count</label>
+                            <input type="range" id="randNumXforms" min="2" max="6" value="3" step="1">
+                            <span class="val-display" id="randNumXformsVal">3</span>
+                        </div>
+                        <div class="control-row">
+                            <label for="randPrimaryVar">Primary Variation</label>
+                            <select id="randPrimaryVar">
+                                <option value="Any">Any / Random</option>
+                                <option value="Swirl">Swirl</option>
+                                <option value="Spherical">Spherical</option>
+                                <option value="Horseshoe">Horseshoe</option>
+                                <option value="Julia">Julia</option>
+                                <option value="Hyperbolic">Hyperbolic</option>
+                                <option value="Diamond">Diamond</option>
+                                <option value="Bubble">Bubble</option>
+                                <option value="Rings">Rings</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="control-card">
+                        <div class="card-title">Symmetry</div>
+                        <div class="control-row">
+                            <div class="label-val">
+                                <label for="symmetrySlider">Rotational Symmetry</label>
+                                <span class="val-display" id="symmetryVal">1x</span>
+                            </div>
+                            <input type="range" id="symmetrySlider" min="1" max="12" value="1" step="1">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Camera Tab -->
+                <div class="tab-pane" id="camera-tab">
+                    <div class="control-card">
+                        <div class="card-title">Viewport & Framing</div>
+                        <div class="control-row">
+                            <div class="label-val">
+                                <label for="zoomSlider">Zoom / Scale</label>
+                                <span class="val-display" id="zoomVal">1.10x</span>
+                            </div>
+                            <input type="range" id="zoomSlider" min="0.1" max="5.0" value="1.1" step="0.05">
+                        </div>
+                        <div class="control-row">
+                            <div class="label-val">
+                                <label for="rotationSlider">Rotation</label>
+                                <span class="val-display" id="rotationVal">0°</span>
+                            </div>
+                            <input type="range" id="rotationSlider" min="-180" max="180" value="0" step="1">
+                        </div>
+                        <div class="control-row">
+                            <div class="label-val">
+                                <label for="panXSlider">Pan Center X</label>
+                                <span class="val-display" id="panXVal">0.00</span>
+                            </div>
+                            <input type="range" id="panXSlider" min="-2.0" max="2.0" value="0.0" step="0.02">
+                        </div>
+                        <div class="control-row">
+                            <div class="label-val">
+                                <label for="panYSlider">Pan Center Y</label>
+                                <span class="val-display" id="panYVal">0.00</span>
+                            </div>
+                            <input type="range" id="panYSlider" min="-2.0" max="2.0" value="0.0" step="0.02">
+                        </div>
+                        <button class="btn" id="btnResetCamera">↺ Reset Camera</button>
+                    </div>
+                </div>
+
+                <!-- Color & Tone Tab -->
+                <div class="tab-pane" id="color-tab">
+                    <div class="control-card">
+                        <div class="card-title">Color Palette</div>
+                        <div class="control-row">
+                            <label for="paletteSelect">Built-in Palette</label>
+                            <select id="paletteSelect"></select>
+                            <div class="palette-preview" id="palettePreview"></div>
+                        </div>
+                    </div>
+
+                    <div class="control-card">
+                        <div class="card-title">Tone Mapping (Density & Gamma)</div>
+                        <div class="control-row">
+                            <div class="label-val">
+                                <label for="gammaSlider">Gamma</label>
+                                <span class="val-display" id="gammaVal">2.20</span>
+                            </div>
+                            <input type="range" id="gammaSlider" min="0.5" max="4.0" value="2.2" step="0.05">
+                        </div>
+                        <div class="control-row">
+                            <div class="label-val">
+                                <label for="brightnessSlider">Brightness</label>
+                                <span class="val-display" id="brightnessVal">1.00</span>
+                            </div>
+                            <input type="range" id="brightnessSlider" min="0.1" max="3.0" value="1.0" step="0.05">
+                        </div>
+                        <div class="control-row">
+                            <div class="label-val">
+                                <label for="vibrancySlider">Vibrancy</label>
+                                <span class="val-display" id="vibrancyVal">1.00</span>
+                            </div>
+                            <input type="range" id="vibrancySlider" min="0.0" max="2.0" value="1.0" step="0.05">
+                        </div>
+                        <div class="control-row">
+                            <label for="bgSelect">Background</label>
+                            <select id="bgSelect">
+                                <option value="0xFF000000">Deep Black</option>
+                                <option value="0xFF0A0C14">Dark Navy</option>
+                                <option value="0xFF151218">Dark Plum</option>
+                                <option value="0xFF0F1715">Dark Forest</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Transforms Tab -->
+                <div class="tab-pane" id="xforms-tab">
+                    <div class="control-card">
+                        <div class="card-title">
+                            <span>Transform Function List</span>
+                            <button class="btn btn-cyan" id="btnAddXform" style="padding: 4px 8px; font-size: 10px;">+ Add</button>
+                        </div>
+                        <div id="xformsContainer" style="display: flex; flex-direction: column; gap: 12px;"></div>
+                    </div>
+                </div>
+
+                <!-- Render Settings Tab -->
+                <div class="tab-pane" id="render-tab">
+                    <div class="control-card">
+                        <div class="card-title">Quality & Resolution</div>
+                        <div class="control-row">
+                            <label for="resSelect">Resolution</label>
+                            <select id="resSelect">
+                                <option value="512x512">512 × 512 (Square Fast)</option>
+                                <option value="800x600" selected>800 × 600 (Standard)</option>
+                                <option value="1024x768">1024 × 768 (High Res)</option>
+                                <option value="1280x720">1280 × 720 (HD Widescreen)</option>
+                            </select>
+                        </div>
+                        <div class="control-row">
+                            <label for="ssSelect">Spatial Supersampling</label>
+                            <select id="ssSelect">
+                                <option value="1">1x (Fastest preview)</option>
+                                <option value="2" selected>2x (Standard Anti-Aliased)</option>
+                                <option value="3">3x (Ultra Crisp)</option>
+                            </select>
+                        </div>
+                        <div class="control-row">
+                            <div class="label-val">
+                                <label for="targetSamplesSlider">Target Quality Samples</label>
+                                <span class="val-display" id="targetSamplesVal">2,000,000</span>
+                            </div>
+                            <input type="range" id="targetSamplesSlider" min="200000" max="10000000" value="2000000" step="100000">
+                        </div>
+                    </div>
+
+                    <div class="control-card">
+                        <div class="card-title">Engine Information</div>
+                        <p style="font-size: 12px; color: var(--text-muted); line-height: 1.5;">
+                            Powered by <strong>FLAM3 C++ WebAssembly</strong> compiled with Emscripten. Iterates the Chaos Game using non-linear variation transforms and logarithmic density tone mapping.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Viewport Canvas Area -->
+        <main class="viewport-container" id="viewport">
+            <canvas id="flameCanvas" width="800" height="600"></canvas>
+
+            <!-- Stats Overlay -->
+            <div class="stats-overlay">
+                <div class="stat-item">
+                    <span class="stat-label">Status</span>
+                    <span class="stat-value" id="statStatus">Ready</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Samples</span>
+                    <span class="stat-value" id="statSamples">0 / 2,000,000</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Throughput</span>
+                    <span class="stat-value" id="statSpeed">0.0 M/s</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">UI FPS</span>
+                    <span class="stat-value" id="statFps">60 fps</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-fill" id="statProgress"></div>
+                </div>
+            </div>
+
+            <!-- Canvas Floating Toolbar -->
+            <div class="viewport-toolbar">
+                <button class="tool-btn" id="btnZoomIn" title="Zoom In">+</button>
+                <button class="tool-btn" id="btnZoomOut" title="Zoom Out">−</button>
+                <button class="tool-btn" id="btnCenterView" title="Center Attractor">⌖</button>
+                <button class="tool-btn" id="btnTogglePlay" title="Play/Pause">⏸</button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modern ES6 Module Loading -->
+    <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flame Fractal Generator (FLAM3 + WebAssembly)</title>
+  <style>
+    :root {
+      --bg-base: #0c0e14;
+      --bg-surface: #141721;
+      --bg-surface-elevated: #1b202e;
+      --bg-input: #0f121a;
+      --border-color: #272d3f;
+      --border-focus: #4f6ef7;
+      --text-primary: #f0f3f8;
+      --text-secondary: #9aa5b8;
+      --text-muted: #626e82;
+      --accent-primary: #5c7cfa;
+      --accent-hover: #4c6ef5;
+      --accent-active: #3b5bdb;
+      --accent-gradient: linear-gradient(135deg, #ff6b6b 0%, #cc5de8 50%, #5c7cfa 100%);
+      --success-color: #51cf66;
+      --warning-color: #fcc419;
+      --danger-color: #ff6b6b;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+      --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.4);
+      --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+      --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    header {
+      background-color: var(--bg-surface);
+      border-bottom: 1px solid var(--border-color);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      z-index: 10;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: var(--accent-gradient);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      box-shadow: 0 0 16px rgba(204, 93, 232, 0.4);
+    }
+
+    .brand h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      background: var(--accent-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-badge {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background-color: rgba(92, 124, 250, 0.15);
+      color: var(--accent-primary);
+      border: 1px solid rgba(92, 124, 250, 0.3);
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+
+    .header-status {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    /* Heartbeat animation showing UI is 100% responsive */
+    .responsiveness-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.8rem;
+      padding: 4px 10px;
+      background-color: var(--bg-surface-elevated);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      color: var(--text-secondary);
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--success-color);
+      animation: pulse 1.2s infinite ease-in-out;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.8); opacity: 0.6; box-shadow: 0 0 0 0 rgba(81, 207, 102, 0.7); }
+      50% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 8px 3px rgba(81, 207, 102, 0.4); }
+      100% { transform: scale(0.8); opacity: 0.6; box-shadow: 0 0 0 0 rgba(81, 207, 102, 0); }
+    }
+
+    .main-layout {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 65px);
+      overflow: hidden;
+    }
+
+    /* Sidebar controls */
+    .sidebar {
+      width: 380px;
+      min-width: 320px;
+      max-width: 440px;
+      background-color: var(--bg-surface);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow-y: auto;
+      z-index: 5;
+    }
+
+    .sidebar-content {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .panel-section {
+      background-color: var(--bg-surface-elevated);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .section-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .btn-group {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 8px;
+    }
+
+    button {
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+      background-color: var(--bg-surface);
+      color: var(--text-primary);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: var(--transition);
+      user-select: none;
+    }
+
+    button:hover:not(:disabled) {
+      background-color: var(--border-color);
+      border-color: var(--text-muted);
+    }
+
+    button:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    button.primary {
+      background: var(--accent-gradient);
+      color: #fff;
+      border: none;
+      font-weight: 600;
+      box-shadow: 0 4px 12px rgba(92, 124, 250, 0.3);
+    }
+
+    button.primary:hover:not(:disabled) {
+      filter: brightness(1.1);
+      box-shadow: 0 6px 18px rgba(92, 124, 250, 0.4);
+    }
+
+    button.accent {
+      background-color: var(--accent-primary);
+      color: #fff;
+      border-color: var(--accent-primary);
+    }
+
+    button.accent:hover:not(:disabled) {
+      background-color: var(--accent-hover);
+    }
+
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .control-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+    }
+
+    .control-value {
+      font-family: ui-monospace, monospace;
+      color: var(--text-primary);
+      font-size: 0.8rem;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent-primary);
+      cursor: pointer;
+      box-shadow: 0 0 6px rgba(92, 124, 250, 0.6);
+      transition: var(--transition);
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+      background: var(--accent-hover);
+    }
+
+    select, input[type="text"], input[type="number"], textarea {
+      font-family: inherit;
+      font-size: 0.85rem;
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+      background-color: var(--bg-input);
+      color: var(--text-primary);
+      outline: none;
+      transition: var(--transition);
+    }
+
+    select:focus, input[type="text"]:focus, input[type="number"]:focus, textarea:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 2px rgba(79, 110, 247, 0.2);
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    .checkbox-row input {
+      cursor: pointer;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    /* Viewport / Canvas area */
+    .viewport-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background: radial-gradient(circle at center, #151824 0%, #0a0b10 100%);
+      overflow: hidden;
+    }
+
+    .canvas-wrapper {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      cursor: grab;
+    }
+
+    .canvas-wrapper:active {
+      cursor: grabbing;
+    }
+
+    canvas {
+      box-shadow: var(--shadow-lg);
+      border-radius: 4px;
+      max-width: 95%;
+      max-height: 95%;
+      object-fit: contain;
+      background-color: #000;
+      image-rendering: auto;
+      transition: opacity 0.15s ease;
+    }
+
+    .floating-toolbar {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: rgba(20, 23, 33, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 30px;
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: var(--shadow-md);
+      z-index: 10;
+    }
+
+    .floating-toolbar button {
+      border-radius: 20px;
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      background: transparent;
+      border: none;
+    }
+
+    .floating-toolbar button:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .status-bar {
+      background-color: var(--bg-surface);
+      border-top: 1px solid var(--border-color);
+      padding: 6px 16px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 5;
+    }
+
+    .status-stats {
+      display: flex;
+      gap: 16px;
+      font-family: ui-monospace, monospace;
+    }
+
+    .render-overlay {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background-color: rgba(20, 23, 33, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      display: none;
+      align-items: center;
+      gap: 8px;
+      z-index: 15;
+    }
+
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-top-color: var(--accent-primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background-color: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-content {
+      background-color: var(--bg-surface-elevated);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 600px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 20px;
+      box-shadow: var(--shadow-lg);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h3 {
+      font-size: 1.1rem;
+    }
+
+    .modal textarea {
+      width: 100%;
+      height: 240px;
+      resize: vertical;
+      font-family: ui-monospace, monospace;
+      font-size: 0.8rem;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    @media (max-width: 860px) {
+      .main-layout {
+        flex-direction: column;
+        height: auto;
+      }
+      .sidebar {
+        width: 100%;
+        max-width: none;
+        height: auto;
+      }
+      .viewport-container {
+        height: 500px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="brand-icon">🔥</div>
+      <div>
+        <h1>FLAM3 Fractal Generator</h1>
+      </div>
+      <span class="brand-badge">WebAssembly</span>
+    </div>
+    <div class="header-status">
+      <div class="responsiveness-badge" id="responsiveBadge">
+        <span class="pulse-dot"></span>
+        <span id="fpsDisplay">UI 60 FPS</span>
+      </div>
+      <button class="primary" id="btnHeaderRender">✨ Render</button>
+    </div>
+  </header>
+
+  <div class="main-layout">
+    <!-- Sidebar Controls -->
+    <aside class="sidebar">
+      <div class="sidebar-content">
+
+        <!-- Presets -->
+        <div class="panel-section">
+          <div class="section-title">
+            <span>Flame Presets</span>
+          </div>
+          <div class="control-row">
+            <select id="selectPreset">
+              <option value="cosmic_swirl">🌌 Cosmic Swirl (Swirl + Spherical)</option>
+              <option value="hyperbolic_star">⭐ Hyperbolic Star (5-fold Symmetry)</option>
+              <option value="spiral_galaxy">🌀 Spiral Galaxy (Spiral + Linear)</option>
+              <option value="julia_bloom">🌸 Julia Bloom (3-fold Symmetry)</option>
+              <option value="dragon_flame">🐉 Dragon Flame (Bent + Horseshoe)</option>
+              <option value="solar_corona">☀️ Solar Corona (6-fold Symmetry)</option>
+              <option value="electric_jellyfish">🪼 Electric Jellyfish (Blob + Waves)</option>
+              <option value="diamond_lattice">💎 Diamond Lattice (8-fold Symmetry)</option>
+              <option value="quantum_rose">🌹 Quantum Rose (Flower + Polar)</option>
+              <option value="escher_dream">🎭 Escher Dream (Escher + Curl)</option>
+            </select>
+          </div>
+          <div class="btn-group">
+            <button id="btnLoadPreset" class="accent">Load Preset</button>
+            <button id="btnRandomize">🎲 Randomize</button>
+          </div>
+        </div>
+
+        <!-- Generation Parameters -->
+        <div class="panel-section">
+          <div class="section-title">
+            <span>Flame Generation</span>
+          </div>
+
+          <div class="control-row">
+            <label class="control-label" for="selectVariation">Primary Variation</label>
+            <select id="selectVariation">
+              <option value="-1">🎲 Random Variation</option>
+              <!-- Filled dynamically with 99 flam3 variations -->
+            </select>
+          </div>
+
+          <div class="control-row">
+            <div class="control-label">
+              <label for="sliderXforms">Transforms</label>
+              <span class="control-value" id="valXforms">3</span>
+            </div>
+            <input type="range" id="sliderXforms" min="2" max="7" step="1" value="3">
+          </div>
+
+          <div class="control-row">
+            <div class="control-label">
+              <label for="sliderSymmetry">Rotational Symmetry</label>
+              <span class="control-value" id="valSymmetry">0 (None)</span>
+            </div>
+            <input type="range" id="sliderSymmetry" min="0" max="12" step="1" value="0">
+          </div>
+
+          <div class="control-row">
+            <div class="control-label">
+              <label for="sliderPalette">Color Palette</label>
+              <span class="control-value" id="valPalette">#0</span>
+            </div>
+            <input type="range" id="sliderPalette" min="0" max="680" step="1" value="0">
+          </div>
+
+          <div class="control-row">
+            <div class="control-label">
+              <label for="sliderHue">Hue Rotation</label>
+              <span class="control-value" id="valHue">0.00</span>
+            </div>
+            <input type="range" id="sliderHue" min="0" max="1" step="0.01" value="0.0">
+          </div>
+
+          <div class="btn-group">
+            <button id="btnRandomPalette">🎨 Random Palette</button>
+            <button id="btnMutate">🧬 Mutate Flame</button>
+          </div>
+        </div>
+
+        <!-- Rendering Quality & Image Size -->
+        <div class="panel-section">
+          <div class="section-title">
+            <span>Quality & Canvas</span>
+          </div>
+
+          <div class="control-row">
+            <div class="control-label">
+              <label for="sliderQuality">Sample Density (Quality)</label>
+              <span class="control-value" id="valQuality">60</span>
+            </div>
+            <input type="range" id="sliderQuality" min="10" max="400" step="5" value="60">
+          </div>
+
+          <div class="grid-2">
+            <div class="control-row">
+              <label class="control-label" for="inputWidth">Width</label>
+              <input type="number" id="inputWidth" value="512" min="128" max="2048" step="64">
+            </div>
+            <div class="control-row">
+              <label class="control-label" for="inputHeight">Height</label>
+              <input type="number" id="inputHeight" value="512" min="128" max="2048" step="64">
+            </div>
+          </div>
+
+          <div class="control-row">
+            <label class="control-label" for="selectResolution">Resolution Presets</label>
+            <select id="selectResolution">
+              <option value="512x512" selected>Standard (512 × 512)</option>
+              <option value="640x640">Medium (640 × 640)</option>
+              <option value="800x800">High (800 × 800)</option>
+              <option value="1024x1024">HD Square (1024 × 1024)</option>
+              <option value="256x256">Fast Preview (256 × 256)</option>
+            </select>
+          </div>
+
+          <div class="control-row">
+            <div class="control-label">
+              <label for="sliderOversample">Spatial Oversample</label>
+              <span class="control-value" id="valOversample">1x</span>
+            </div>
+            <input type="range" id="sliderOversample" min="1" max="3" step="1" value="1">
+          </div>
+
+          <label class="checkbox-row">
+            <input type="checkbox" id="chkTransparency">
+            <span>Transparent Background</span>
+          </label>
+        </div>
+
+        <!-- Color Adjustments -->
+        <div class="panel-section">
+          <div class="section-title">
+            <span>Color & Lighting</span>
+          </div>
+
+          <div class="control-row">
+            <div class="control-label">
+              <label for="sliderGamma">Gamma</label>
+              <span class="control-value" id="valGamma">4.0</span>
+            </div>
+            <input type="range" id="sliderGamma" min="1.0" max="8.0" step="0.1" value="4.0">
+          </div>
+
+          <div class="control-row">
+            <div class="control-label">
+              <label for="sliderVibrancy">Vibrancy</label>
+              <span class="control-value" id="valVibrancy">1.00</span>
+            </div>
+            <input type="range" id="sliderVibrancy" min="0.0" max="1.0" step="0.05" value="1.0">
+          </div>
+
+          <div class="control-row">
+            <div class="control-label">
+              <label for="sliderBrightness">Brightness</label>
+              <span class="control-value" id="valBrightness">1.00</span>
+            </div>
+            <input type="range" id="sliderBrightness" min="0.1" max="3.0" step="0.05" value="1.0">
+          </div>
+
+          <div class="control-row">
+            <div class="control-label">
+              <label for="sliderContrast">Contrast</label>
+              <span class="control-value" id="valContrast">1.00</span>
+            </div>
+            <input type="range" id="sliderContrast" min="0.1" max="3.0" step="0.05" value="1.0">
+          </div>
+        </div>
+
+        <!-- Camera & Transformation -->
+        <div class="panel-section">
+          <div class="section-title">
+            <span>Camera & Transform</span>
+          </div>
+
+          <div class="control-row">
+            <div class="control-label">
+              <label for="sliderZoom">Zoom</label>
+              <span class="control-value" id="valZoom">0.00</span>
+            </div>
+            <input type="range" id="sliderZoom" min="-3.0" max="3.0" step="0.05" value="0.0">
+          </div>
+
+          <div class="control-row">
+            <div class="control-label">
+              <label for="sliderRotate">Rotation (°)</label>
+              <span class="control-value" id="valRotate">0°</span>
+            </div>
+            <input type="range" id="sliderRotate" min="-180" max="180" step="1" value="0">
+          </div>
+
+          <div class="btn-group">
+            <button id="btnResetView">🔄 Reset View</button>
+            <button id="btnAutoCenter">🎯 Auto Center</button>
+          </div>
+        </div>
+
+        <!-- XML Import/Export -->
+        <div class="panel-section">
+          <div class="section-title">
+            <span>Genome XML</span>
+          </div>
+          <div class="btn-group">
+            <button id="btnOpenXmlModal">📜 View / Edit XML</button>
+            <button id="btnDownloadPng">💾 Save PNG</button>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+
+    <!-- Main Viewport Area -->
+    <main class="viewport-container">
+      <div class="render-overlay" id="renderOverlay">
+        <div class="spinner"></div>
+        <span>Rendering fractal flame...</span>
+      </div>
+
+      <div class="canvas-wrapper" id="canvasWrapper">
+        <canvas id="flameCanvas" width="512" height="512"></canvas>
+      </div>
+
+      <!-- Floating quick action toolbar -->
+      <div class="floating-toolbar">
+        <button id="btnZoomIn" title="Zoom In">🔍 +</button>
+        <button id="btnZoomOut" title="Zoom Out">🔍 -</button>
+        <button id="btnQuickRandom" title="New Random Flame">🎲 New Flame</button>
+        <button id="btnQuickMutate" title="Mutate Current Flame">🧬 Mutate</button>
+        <button id="btnQuickRender" class="accent" title="Render Current Flame">⚡ Render</button>
+      </div>
+
+      <!-- Status Footer -->
+      <div class="status-bar">
+        <span id="statusMessage">Ready</span>
+        <div class="status-stats">
+          <span id="statResolution">512 × 512</span>
+          <span id="statRenderTime">Time: -- ms</span>
+          <span id="statIters">Iters: --</span>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- XML Modal Dialog -->
+  <div class="modal" id="xmlModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>FLAM3 Genome XML</h3>
+        <button id="btnCloseXmlModal">✕</button>
+      </div>
+      <p style="font-size: 0.8rem; color: var(--text-secondary);">
+        You can view, edit, or paste Apophysis / flam3 XML definitions here.
+      </p>
+      <textarea id="txtXmlContent" spellcheck="false"></textarea>
+      <div class="modal-actions">
+        <button id="btnCopyXml">📋 Copy to Clipboard</button>
+        <button id="btnApplyXml" class="primary">Apply XML</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    // State management
+    const state = {
+      width: 512,
+      height: 512,
+      quality: 60,
+      spatialOversample: 1,
+      spatialFilterRadius: 0.6,
+      gamma: 4.0,
+      vibrancy: 1.0,
+      brightness: 1.0,
+      contrast: 1.0,
+      zoom: 0.0,
+      rotate: 0.0,
+      centerX: 0.0,
+      centerY: 0.0,
+      numXforms: 3,
+      symmetry: 0,
+      paletteIndex: 0,
+      hueRotation: 0.0,
+      variationIndex: -1,
+      transparency: false,
+      seed: 42,
+      currentXml: ''
+    };
+
+    let isRendering = false;
+    let pendingRender = false;
+    let nextRenderParams = null;
+    let currentRenderId = 0;
+    let worker = null;
+
+    const canvas = document.getElementById('flameCanvas');
+    const ctx = canvas.getContext('2d');
+    const renderOverlay = document.getElementById('renderOverlay');
+    const statusMsg = document.getElementById('statusMessage');
+    const statResolution = document.getElementById('statResolution');
+    const statRenderTime = document.getElementById('statRenderTime');
+    const statIters = document.getElementById('statIters');
+    const fpsDisplay = document.getElementById('fpsDisplay');
+
+    // Smooth UI 60 FPS heartbeat monitoring
+    let frameCount = 0;
+    let lastFpsUpdate = performance.now();
+    function trackFps() {
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsUpdate >= 500) {
+        const fps = Math.round((frameCount * 1000) / (now - lastFpsUpdate));
+        fpsDisplay.textContent = `UI ${fps} FPS`;
+        frameCount = 0;
+        lastFpsUpdate = now;
+      }
+      requestAnimationFrame(trackFps);
+    }
+    requestAnimationFrame(trackFps);
+
+    // Preset definitions
+    const PRESETS = {
+      cosmic_swirl: {
+        numXforms: 3,
+        symmetry: 0,
+        variationIndex: 3, // Swirl
+        paletteIndex: 25,
+        hueRotation: 0.1,
+        gamma: 4.0,
+        vibrancy: 1.0,
+        brightness: 1.2,
+        contrast: 1.1,
+        seed: 101
+      },
+      hyperbolic_star: {
+        numXforms: 4,
+        symmetry: 5,
+        variationIndex: 10, // Hyperbolic
+        paletteIndex: 42,
+        hueRotation: 0.35,
+        gamma: 3.8,
+        vibrancy: 1.0,
+        brightness: 1.1,
+        contrast: 1.0,
+        seed: 202
+      },
+      spiral_galaxy: {
+        numXforms: 3,
+        symmetry: 2,
+        variationIndex: 9, // Spiral
+        paletteIndex: 88,
+        hueRotation: 0.6,
+        gamma: 4.2,
+        vibrancy: 1.0,
+        brightness: 1.3,
+        contrast: 1.2,
+        seed: 303
+      },
+      julia_bloom: {
+        numXforms: 3,
+        symmetry: 3,
+        variationIndex: 13, // Julia
+        paletteIndex: 15,
+        hueRotation: 0.0,
+        gamma: 4.0,
+        vibrancy: 1.0,
+        brightness: 1.15,
+        contrast: 1.05,
+        seed: 404
+      },
+      dragon_flame: {
+        numXforms: 4,
+        symmetry: 0,
+        variationIndex: 14, // Bent
+        paletteIndex: 120,
+        hueRotation: 0.05,
+        gamma: 3.5,
+        vibrancy: 1.0,
+        brightness: 1.2,
+        contrast: 1.1,
+        seed: 505
+      },
+      solar_corona: {
+        numXforms: 4,
+        symmetry: 6,
+        variationIndex: 21, // Rings
+        paletteIndex: 7,
+        hueRotation: 0.0,
+        gamma: 4.5,
+        vibrancy: 1.0,
+        brightness: 1.4,
+        contrast: 1.2,
+        seed: 606
+      },
+      electric_jellyfish: {
+        numXforms: 3,
+        symmetry: 4,
+        variationIndex: 23, // Blob
+        paletteIndex: 180,
+        hueRotation: 0.75,
+        gamma: 3.6,
+        vibrancy: 1.0,
+        brightness: 1.25,
+        contrast: 1.1,
+        seed: 707
+      },
+      diamond_lattice: {
+        numXforms: 4,
+        symmetry: 8,
+        variationIndex: 11, // Diamond
+        paletteIndex: 210,
+        hueRotation: 0.45,
+        gamma: 4.0,
+        vibrancy: 1.0,
+        brightness: 1.1,
+        contrast: 1.0,
+        seed: 808
+      },
+      quantum_rose: {
+        numXforms: 3,
+        symmetry: 6,
+        variationIndex: 51, // Flower
+        paletteIndex: 310,
+        hueRotation: 0.9,
+        gamma: 3.8,
+        vibrancy: 1.0,
+        brightness: 1.2,
+        contrast: 1.15,
+        seed: 909
+      },
+      escher_dream: {
+        numXforms: 4,
+        symmetry: 0,
+        variationIndex: 63, // Escher
+        paletteIndex: 450,
+        hueRotation: 0.2,
+        gamma: 4.0,
+        vibrancy: 1.0,
+        brightness: 1.1,
+        contrast: 1.0,
+        seed: 1010
+      }
+    };
+
+    // Initialize Web Worker
+    function initWorker() {
+      statusMsg.textContent = 'Initializing WebAssembly engine...';
+      worker = new Worker('./worker.js', { type: 'module' });
+
+      worker.onmessage = (e) => {
+        const data = e.data;
+        if (data.type === 'log') {
+          console.log('WORKER LOG:', data.message);
+        } else if (data.type === 'ready') {
+          statusMsg.textContent = 'Engine ready';
+          // Populate variations dropdown
+          const selectVar = document.getElementById('selectVariation');
+          if (data.variationNames && data.variationNames.length > 0) {
+            data.variationNames.forEach((name, idx) => {
+              const opt = document.createElement('option');
+              opt.value = idx;
+              opt.textContent = `${idx}: ${name.charAt(0).toUpperCase() + name.slice(1)}`;
+              selectVar.appendChild(opt);
+            });
+          }
+          if (data.paletteCount) {
+            document.getElementById('sliderPalette').max = Math.max(10, data.paletteCount - 1);
+          }
+          // Initial render
+          loadPreset('cosmic_swirl');
+        } else if (data.type === 'renderComplete') {
+          handleRenderComplete(data);
+        } else if (data.type === 'error') {
+          console.error('Worker error:', data.error);
+          statusMsg.textContent = `Error: ${data.error}`;
+          renderOverlay.style.display = 'none';
+          isRendering = false;
+        } else if (data.type === 'xmlResult') {
+          document.getElementById('txtXmlContent').value = data.xml;
+        }
+      };
+
+      worker.onerror = (err) => {
+        console.error('Worker init error:', err);
+        statusMsg.textContent = 'Failed to load WebAssembly worker.';
+      };
+    }
+
+    function handleRenderComplete(data) {
+      if (data.id !== currentRenderId) return;
+
+      const { buffer, width, height, stats, xml, centerX, centerY } = data;
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+
+      const imgData = new ImageData(new Uint8ClampedArray(buffer), width, height);
+      ctx.putImageData(imgData, 0, 0);
+
+      state.currentXml = xml;
+      if (centerX !== undefined) state.centerX = centerX;
+      if (centerY !== undefined) state.centerY = centerY;
+
+      statResolution.textContent = `${width} × ${height}`;
+      statRenderTime.textContent = `Time: ${stats.renderTimeMs} ms`;
+      statIters.textContent = `Iters: ${(stats.numIters / 1000).toFixed(1)}k`;
+      statusMsg.textContent = `Render completed in ${stats.renderTimeMs} ms`;
+
+      renderOverlay.style.display = 'none';
+      isRendering = false;
+
+      // Dispatch custom event for testing / puppeteer
+      canvas.dispatchEvent(new CustomEvent('flamerendered', { detail: { width, height, stats } }));
+
+      if (pendingRender && nextRenderParams) {
+        pendingRender = false;
+        const p = nextRenderParams;
+        nextRenderParams = null;
+        triggerRender(p);
+      }
+    }
+
+    function triggerRender(actionParams = {}) {
+      const renderParams = {
+        ...state,
+        ...actionParams
+      };
+
+      if (isRendering) {
+        pendingRender = true;
+        nextRenderParams = actionParams;
+        return;
+      }
+
+      isRendering = true;
+      currentRenderId++;
+      renderOverlay.style.display = 'flex';
+      statusMsg.textContent = 'Rendering flame fractal...';
+
+      worker.postMessage({
+        type: 'render',
+        id: currentRenderId,
+        params: renderParams
+      });
+    }
+
+    function loadPreset(name) {
+      const p = PRESETS[name];
+      if (!p) return;
+
+      state.numXforms = p.numXforms;
+      state.symmetry = p.symmetry;
+      state.variationIndex = p.variationIndex;
+      state.paletteIndex = p.paletteIndex;
+      state.hueRotation = p.hueRotation;
+      state.gamma = p.gamma;
+      state.vibrancy = p.vibrancy;
+      state.brightness = p.brightness;
+      state.contrast = p.contrast;
+      state.seed = p.seed || Math.floor(Math.random() * 100000);
+      state.zoom = 0.0;
+      state.rotate = 0.0;
+
+      updateUIFromState();
+      triggerRender({ action: 'generate', resetCenterAndScale: true });
+    }
+
+    function updateUIFromState() {
+      document.getElementById('sliderXforms').value = state.numXforms;
+      document.getElementById('valXforms').textContent = state.numXforms;
+      document.getElementById('sliderSymmetry').value = state.symmetry;
+      document.getElementById('valSymmetry').textContent = state.symmetry === 0 ? '0 (None)' : `${state.symmetry}-fold`;
+      document.getElementById('sliderPalette').value = state.paletteIndex;
+      document.getElementById('valPalette').textContent = `#${state.paletteIndex}`;
+      document.getElementById('sliderHue').value = state.hueRotation;
+      document.getElementById('valHue').textContent = Number(state.hueRotation).toFixed(2);
+      document.getElementById('selectVariation').value = state.variationIndex;
+      document.getElementById('sliderQuality').value = state.quality;
+      document.getElementById('valQuality').textContent = state.quality;
+      document.getElementById('inputWidth').value = state.width;
+      document.getElementById('inputHeight').value = state.height;
+      document.getElementById('sliderGamma').value = state.gamma;
+      document.getElementById('valGamma').textContent = Number(state.gamma).toFixed(1);
+      document.getElementById('sliderVibrancy').value = state.vibrancy;
+      document.getElementById('valVibrancy').textContent = Number(state.vibrancy).toFixed(2);
+      document.getElementById('sliderBrightness').value = state.brightness;
+      document.getElementById('valBrightness').textContent = Number(state.brightness).toFixed(2);
+      document.getElementById('sliderContrast').value = state.contrast;
+      document.getElementById('valContrast').textContent = Number(state.contrast).toFixed(2);
+      document.getElementById('sliderZoom').value = state.zoom;
+      document.getElementById('valZoom').textContent = Number(state.zoom).toFixed(2);
+      document.getElementById('sliderRotate').value = state.rotate;
+      document.getElementById('valRotate').textContent = `${Math.round(state.rotate)}°`;
+      document.getElementById('sliderOversample').value = state.spatialOversample;
+      document.getElementById('valOversample').textContent = `${state.spatialOversample}x`;
+      document.getElementById('chkTransparency').checked = state.transparency;
+    }
+
+    // Event Listeners
+    document.getElementById('selectPreset').addEventListener('change', (e) => {
+      loadPreset(e.target.value);
+    });
+
+    document.getElementById('btnLoadPreset').addEventListener('click', () => {
+      loadPreset(document.getElementById('selectPreset').value);
+    });
+
+    document.getElementById('btnRandomize').addEventListener('click', () => {
+      state.seed = Math.floor(Math.random() * 1000000);
+      state.paletteIndex = Math.floor(Math.random() * 650);
+      state.variationIndex = -1;
+      state.zoom = 0.0;
+      state.rotate = 0.0;
+      updateUIFromState();
+      triggerRender({ action: 'generate', resetCenterAndScale: true });
+    });
+
+    document.getElementById('btnQuickRandom').addEventListener('click', () => {
+      document.getElementById('btnRandomize').click();
+    });
+
+    document.getElementById('btnMutate').addEventListener('click', () => {
+      triggerRender({ action: 'mutate', mutateMode: 0, mutateSpeed: 1.0 });
+    });
+
+    document.getElementById('btnQuickMutate').addEventListener('click', () => {
+      document.getElementById('btnMutate').click();
+    });
+
+    document.getElementById('btnHeaderRender').addEventListener('click', () => triggerRender());
+    document.getElementById('btnQuickRender').addEventListener('click', () => triggerRender());
+
+    document.getElementById('btnRandomPalette').addEventListener('click', () => {
+      state.paletteIndex = Math.floor(Math.random() * 650);
+      state.hueRotation = Math.random();
+      updateUIFromState();
+      triggerRender({ setPalette: true });
+    });
+
+    // Sliders
+    document.getElementById('sliderXforms').addEventListener('input', (e) => {
+      state.numXforms = parseInt(e.target.value, 10);
+      document.getElementById('valXforms').textContent = state.numXforms;
+    });
+    document.getElementById('sliderXforms').addEventListener('change', () => {
+      triggerRender({ action: 'generate', resetCenterAndScale: true });
+    });
+
+    document.getElementById('sliderSymmetry').addEventListener('input', (e) => {
+      state.symmetry = parseInt(e.target.value, 10);
+      document.getElementById('valSymmetry').textContent = state.symmetry === 0 ? '0 (None)' : `${state.symmetry}-fold`;
+    });
+    document.getElementById('sliderSymmetry').addEventListener('change', () => {
+      triggerRender({ setSymmetry: true });
+    });
+
+    document.getElementById('sliderPalette').addEventListener('input', (e) => {
+      state.paletteIndex = parseInt(e.target.value, 10);
+      document.getElementById('valPalette').textContent = `#${state.paletteIndex}`;
+    });
+    document.getElementById('sliderPalette').addEventListener('change', () => {
+      triggerRender({ setPalette: true });
+    });
+
+    document.getElementById('sliderHue').addEventListener('input', (e) => {
+      state.hueRotation = parseFloat(e.target.value);
+      document.getElementById('valHue').textContent = state.hueRotation.toFixed(2);
+    });
+    document.getElementById('sliderHue').addEventListener('change', () => {
+      triggerRender({ setHueRotation: true });
+    });
+
+    document.getElementById('selectVariation').addEventListener('change', (e) => {
+      state.variationIndex = parseInt(e.target.value, 10);
+      triggerRender({ action: 'generate', resetCenterAndScale: true });
+    });
+
+    document.getElementById('sliderQuality').addEventListener('input', (e) => {
+      state.quality = parseInt(e.target.value, 10);
+      document.getElementById('valQuality').textContent = state.quality;
+    });
+    document.getElementById('sliderQuality').addEventListener('change', () => triggerRender());
+
+    document.getElementById('selectResolution').addEventListener('change', (e) => {
+      const [w, h] = e.target.value.split('x').map(Number);
+      state.width = w;
+      state.height = h;
+      document.getElementById('inputWidth').value = w;
+      document.getElementById('inputHeight').value = h;
+      triggerRender();
+    });
+
+    document.getElementById('inputWidth').addEventListener('change', (e) => {
+      state.width = Math.max(64, parseInt(e.target.value, 10));
+      triggerRender();
+    });
+    document.getElementById('inputHeight').addEventListener('change', (e) => {
+      state.height = Math.max(64, parseInt(e.target.value, 10));
+      triggerRender();
+    });
+
+    document.getElementById('sliderOversample').addEventListener('input', (e) => {
+      state.spatialOversample = parseInt(e.target.value, 10);
+      document.getElementById('valOversample').textContent = `${state.spatialOversample}x`;
+    });
+    document.getElementById('sliderOversample').addEventListener('change', () => triggerRender());
+
+    document.getElementById('chkTransparency').addEventListener('change', (e) => {
+      state.transparency = e.target.checked;
+      triggerRender();
+    });
+
+    ['Gamma', 'Vibrancy', 'Brightness', 'Contrast'].forEach((prop) => {
+      const slider = document.getElementById(`slider${prop}`);
+      const val = document.getElementById(`val${prop}`);
+      const key = prop.toLowerCase();
+      slider.addEventListener('input', (e) => {
+        state[key] = parseFloat(e.target.value);
+        val.textContent = state[key].toFixed(2);
+      });
+      slider.addEventListener('change', () => triggerRender());
+    });
+
+    document.getElementById('sliderZoom').addEventListener('input', (e) => {
+      state.zoom = parseFloat(e.target.value);
+      document.getElementById('valZoom').textContent = state.zoom.toFixed(2);
+    });
+    document.getElementById('sliderZoom').addEventListener('change', () => triggerRender());
+
+    document.getElementById('sliderRotate').addEventListener('input', (e) => {
+      state.rotate = parseFloat(e.target.value);
+      document.getElementById('valRotate').textContent = `${Math.round(state.rotate)}°`;
+    });
+    document.getElementById('sliderRotate').addEventListener('change', () => triggerRender());
+
+    document.getElementById('btnResetView').addEventListener('click', () => {
+      state.zoom = 0.0;
+      state.rotate = 0.0;
+      updateUIFromState();
+      triggerRender({ resetCenterAndScale: true });
+    });
+
+    document.getElementById('btnAutoCenter').addEventListener('click', () => {
+      triggerRender({ resetCenterAndScale: true });
+    });
+
+    document.getElementById('btnZoomIn').addEventListener('click', () => {
+      state.zoom = Math.min(3.0, state.zoom + 0.3);
+      updateUIFromState();
+      triggerRender();
+    });
+
+    document.getElementById('btnZoomOut').addEventListener('click', () => {
+      state.zoom = Math.max(-3.0, state.zoom - 0.3);
+      updateUIFromState();
+      triggerRender();
+    });
+
+    // Interactive Drag to Pan & Wheel to Zoom
+    const wrapper = document.getElementById('canvasWrapper');
+    let isDragging = false;
+    let dragStart = { x: 0, y: 0 };
+    let initialCenter = { x: 0, y: 0 };
+
+    wrapper.addEventListener('mousedown', (e) => {
+      if (e.target !== canvas && e.target !== wrapper) return;
+      isDragging = true;
+      dragStart = { x: e.clientX, y: e.clientY };
+      initialCenter = { x: state.centerX, y: state.centerY };
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - dragStart.x;
+      const dy = e.clientY - dragStart.y;
+      // Convert pixel delta to flame camera units based on current zoom and dimensions
+      const scaleFactor = Math.pow(2.0, state.zoom) * (state.width / 5.0);
+      state.centerX = initialCenter.x - dx / scaleFactor;
+      state.centerY = initialCenter.y + dy / scaleFactor;
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        triggerRender();
+      }
+    });
+
+    wrapper.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const zoomDelta = e.deltaY < 0 ? 0.15 : -0.15;
+      state.zoom = Math.max(-3.0, Math.min(3.0, state.zoom + zoomDelta));
+      updateUIFromState();
+      triggerRender();
+    }, { passive: false });
+
+    wrapper.addEventListener('dblclick', () => {
+      state.zoom = 0.0;
+      updateUIFromState();
+      triggerRender({ resetCenterAndScale: true });
+    });
+
+    // Save PNG
+    document.getElementById('btnDownloadPng').addEventListener('click', () => {
+      const link = document.createElement('a');
+      link.download = `flame_${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    });
+
+    // XML Modal
+    const modal = document.getElementById('xmlModal');
+    document.getElementById('btnOpenXmlModal').addEventListener('click', () => {
+      worker.postMessage({ type: 'getXml', id: ++currentRenderId });
+      modal.style.display = 'flex';
+    });
+
+    document.getElementById('btnCloseXmlModal').addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
+
+    document.getElementById('btnCopyXml').addEventListener('click', () => {
+      const txt = document.getElementById('txtXmlContent');
+      txt.select();
+      navigator.clipboard.writeText(txt.value);
+      statusMsg.textContent = 'XML copied to clipboard';
+    });
+
+    document.getElementById('btnApplyXml').addEventListener('click', () => {
+      const xml = document.getElementById('txtXmlContent').value;
+      modal.style.display = 'none';
+      if (xml.trim()) {
+        triggerRender({ action: 'loadXml', xml });
+      }
+    });
+
+    window.addEventListener('click', (e) => {
+      if (e.target === modal) modal.style.display = 'none';
+    });
+
+    // Start
+    initWorker();
+  </script>
+</body>
+</html>
