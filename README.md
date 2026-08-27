@@ -73,11 +73,21 @@ Evaluate the generated `Makefile`, C++ code, and HTML/JS frontend against the 4 
 ./run_evals.py evaluate
 ```
 
-This generates detailed markdown reports in `results/<test_name>/evaluation_report.md` along with an executive summary table in `results/summary_metrics.md`.
+This generates detailed markdown reports in
+`results/<test_name>/evaluation_report.md` along with an executive summary table
+in `results/summary_metrics.md`.
+
+You can also re-generate `results/summary_metrics.md` at any time from all
+existing test reports:
+
+```bash
+./run_evals.py summarize
+```
 
 ### 5. Check Overall Status
 
-View a quick table showing workspace setup, build status, and evaluation scores across all test cases:
+View a quick table showing workspace setup, build status, and evaluation scores
+across all test cases:
 
 ```bash
 ./run_evals.py status

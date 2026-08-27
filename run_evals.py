@@ -467,8 +467,6 @@ def build_workspaces(tests: list[str]) -> None:
 
 def evaluate_tests(tests: list[str]) -> None:
     """Evaluate and grade the generated solutions against best practices."""
-    summary_rows = []
-
     for test in tests:
         test_dir = TESTS_DIR / test
         criteria_file = test_dir / "evaluation_criteria.md"
@@ -567,7 +565,36 @@ def evaluate_tests(tests: list[str]) -> None:
         report_path.write_text(report_content, encoding="utf-8")
         print(f"Wrote evaluation report: {report_path}")
 
-        summary_rows.append((test, unguided_score, guided_score, uplift))
+    generate_summary_metrics()
+
+
+def generate_summary_metrics() -> None:
+    """Generate or update summary_metrics.md from all existing evaluation reports."""
+    tests = get_all_tests()
+    summary_rows = []
+
+    for test in tests:
+        report_path = RESULTS_DIR / test / "evaluation_report.md"
+        if not report_path.exists():
+            continue
+
+        lines = report_path.read_text(encoding="utf-8").splitlines()
+        unguided_score = None
+        guided_score = None
+
+        for line in lines:
+            if "Unguided Score:" in line:
+                m = re.search(r"(\d+)\s*/\s*100", line)
+                if m:
+                    unguided_score = int(m.group(1))
+            elif "Guided Score:" in line:
+                m = re.search(r"(\d+)\s*/\s*100", line)
+                if m:
+                    guided_score = int(m.group(1))
+
+        if unguided_score is not None and guided_score is not None:
+            uplift = guided_score - unguided_score
+            summary_rows.append((test, unguided_score, guided_score, uplift))
 
     if summary_rows:
         name_w = max(16, *(len(r[0]) for r in summary_rows))
@@ -686,6 +713,12 @@ def main() -> None:
     eval_p = subparsers.add_parser("evaluate", help="Evaluate and score outputs")
     eval_p.add_argument("--test", help="Specific test name")
 
+    # summarize
+    subparsers.add_parser(
+        "summarize",
+        help="Re-generate summary_metrics.md from all existing reports",
+    )
+
     # status
     subparsers.add_parser("status", help="Show status of test workspaces")
 
@@ -706,6 +739,8 @@ def main() -> None:
         build_workspaces(tests)
     elif args.command == "evaluate":
         evaluate_tests(tests)
+    elif args.command == "summarize":
+        generate_summary_metrics()
     elif args.command == "status":
         print_status()
 
